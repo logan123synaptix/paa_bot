@@ -1,0 +1,288 @@
+using System;
+using System.IO;
+using System.Text.RegularExpressions;
+using System.Windows;
+using System.Windows.Media;
+using SimplePLC.Studio.Services;
+using Xunit;
+
+namespace SimplePLC.Studio.Tests;
+
+/// <summary>
+/// Unit tests verifying compliance of the standardized Lucide Icons vector system (Issue #14):
+/// 1. Validation of all IEC 61131-3 and System StreamGeometry definitions in Icons.xaml.
+/// 2. Elimination of 100% raw OS emoji characters across critical UI views and viewmodels.
+/// 3. Verification of clean industrial typography in LocalizationService dictionaries.
+/// </summary>
+public class LucideIconsTests
+{
+    private static readonly Regex EmojiPattern = new(
+        @"[\uD83C-\uDBFF\uDC00-\uDFFF]|[\u2600-\u27BF]|[\u2300-\u23FF]|[\u2B50]|⭐|☆|★",
+        RegexOptions.Compiled);
+
+    [Fact]
+    public void IconsResourceDictionary_ContainsAllRegisteredGeometries()
+    {
+        // Path to Styles/Icons.xaml in SimplePLC.Studio
+        string xamlPath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "SimplePLC.Studio", "Styles", "Icons.xaml");
+        if (!File.Exists(xamlPath))
+        {
+            xamlPath = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "SimplePLC.Studio", "Styles", "Icons.xaml"));
+        }
+
+        Assert.True(File.Exists(xamlPath), $"Icons.xaml not found at: {xamlPath}");
+        string xamlContent = File.ReadAllText(xamlPath);
+
+        // Verify MIT License header is present
+        Assert.Contains("Lucide Icons", xamlContent);
+        Assert.Contains("License: MIT", xamlContent);
+
+        // Required IEC category & block keys
+        string[] requiredIecKeys =
+        {
+            "IconIecProcessIo",
+            "IconIecInputPort",
+            "IconIecActionCoil",
+            "IconIecLogic",
+            "IconIecTriggerPulse",
+            "IconIecGuardInterlock",
+            "IconIecComparator",
+            "IconIecTimers",
+            "IconIecTimerTon",
+            "IconIecTimerTof",
+            "IconIecTimerTp",
+            "IconIecTimerCycle",
+            "IconIecCounters",
+            "IconIecCounterCtu",
+            "IconIecCounterCtd",
+            "IconIecAnalog",
+            "IconIecAnalogScale",
+            "IconIecCommunication",
+            "IconIecMqtt",
+            "IconIecMqttPublish",
+            "IconIecMqttSubscribe",
+            "IconIecModbus"
+        };
+
+        foreach (var key in requiredIecKeys)
+        {
+            Assert.Contains($"x:Key=\"{key}\"", xamlContent);
+        }
+
+        // Required system workbench keys
+        string[] requiredSysKeys =
+        {
+            "IconSysRun",
+            "IconSysStop",
+            "IconSysCompile",
+            "IconSysFlashDownload",
+            "IconSysConnect",
+            "IconSysDisconnect",
+            "IconSysLiveWatch",
+            "IconSysTagTable",
+            "IconSysLogicEditor",
+            "IconSysBlueprints",
+            "IconSysSearch",
+            "IconSysClear",
+            "IconSysStar",
+            "IconSysLock",
+            "IconSysUnlock",
+            "IconSysPlus",
+            "IconSysPencil",
+            "IconSysTrash",
+            "IconSysCopy",
+            "IconSysSave",
+            "IconSysFolderOpen",
+            "IconSysSettings",
+            "IconSysAlertTriangle",
+            "IconSysCheck"
+        };
+
+        foreach (var key in requiredSysKeys)
+        {
+            Assert.Contains($"x:Key=\"{key}\"", xamlContent);
+        }
+    }
+
+    [Fact]
+    public void AllIcons_ParseSuccessfullyAsValidStreamGeometry()
+    {
+        string xamlPath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "SimplePLC.Studio", "Styles", "Icons.xaml");
+        if (!File.Exists(xamlPath))
+        {
+            xamlPath = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "SimplePLC.Studio", "Styles", "Icons.xaml"));
+        }
+
+        Assert.True(File.Exists(xamlPath));
+        string content = File.ReadAllText(xamlPath);
+
+        var matches = Regex.Matches(content, @"<StreamGeometry\s+x:Key=""([^""]+)"">([^<]+)</StreamGeometry>");
+        Assert.True(matches.Count >= 80, $"Expected >= 80 icons, found {matches.Count}");
+
+        foreach (Match match in matches)
+        {
+            string key = match.Groups[1].Value;
+            string pathData = match.Groups[2].Value.Trim();
+
+            // WPF Geometry.Parse must succeed with zero exceptions
+            var geom = Geometry.Parse(pathData);
+            Assert.NotNull(geom);
+            Assert.False(geom.Bounds.IsEmpty, $"Geometry bounds for icon '{key}' must not be empty.");
+        }
+    }
+
+    [Fact]
+    public void IconSysSettings_IsSymmetricallyCenteredAt12x12()
+    {
+        string xamlPath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "SimplePLC.Studio", "Styles", "Icons.xaml");
+        if (!File.Exists(xamlPath))
+        {
+            xamlPath = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "SimplePLC.Studio", "Styles", "Icons.xaml"));
+        }
+
+        string content = File.ReadAllText(xamlPath);
+        var match = Regex.Match(content, @"<StreamGeometry\s+x:Key=""IconSysSettings"">([^<]+)</StreamGeometry>");
+        Assert.True(match.Success, "IconSysSettings not found");
+
+        var geom = Geometry.Parse(match.Groups[1].Value.Trim());
+        var bounds = geom.Bounds;
+
+        double centerX = bounds.X + bounds.Width / 2.0;
+        double centerY = bounds.Y + bounds.Height / 2.0;
+
+        // Visual center must be mathematically aligned to 12.0 within 0.25px
+        Assert.InRange(centerX, 11.75, 12.25);
+        Assert.InRange(centerY, 11.75, 12.25);
+        Assert.InRange(bounds.Width, 16.0, 24.0);
+        Assert.InRange(bounds.Height, 16.0, 24.0);
+    }
+
+    [Fact]
+    public void StandardizedIcons_AllFitWithin24x24Viewport()
+    {
+        string xamlPath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "SimplePLC.Studio", "Styles", "Icons.xaml");
+        if (!File.Exists(xamlPath))
+        {
+            xamlPath = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "SimplePLC.Studio", "Styles", "Icons.xaml"));
+        }
+
+        string content = File.ReadAllText(xamlPath);
+        var matches = Regex.Matches(content, @"<StreamGeometry\s+x:Key=""([^""]+)"">([^<]+)</StreamGeometry>");
+
+        foreach (Match match in matches)
+        {
+            string key = match.Groups[1].Value;
+            var geom = Geometry.Parse(match.Groups[2].Value.Trim());
+            var bounds = geom.Bounds;
+
+            // Viewport standard: 24x24 canvas [0..24, 0..24] (with minor 0.5px margin tolerance for stroke extent)
+            Assert.True(bounds.Left >= -0.5, $"Icon '{key}' left bound {bounds.Left} exceeds canvas");
+            Assert.True(bounds.Top >= -0.5, $"Icon '{key}' top bound {bounds.Top} exceeds canvas");
+            Assert.True(bounds.Right <= 24.5, $"Icon '{key}' right bound {bounds.Right} exceeds canvas");
+            Assert.True(bounds.Bottom <= 24.5, $"Icon '{key}' bottom bound {bounds.Bottom} exceeds canvas");
+        }
+    }
+
+    [Fact]
+    public void LogicEditorToolbox_ContainsNoRawEmojis()
+    {
+        string viewPath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "SimplePLC.Studio", "Views", "LogicEditorView.xaml");
+        if (!File.Exists(viewPath))
+        {
+            viewPath = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "SimplePLC.Studio", "Views", "LogicEditorView.xaml"));
+        }
+
+        Assert.True(File.Exists(viewPath), $"LogicEditorView.xaml not found at: {viewPath}");
+        string content = File.ReadAllText(viewPath);
+
+        // Isolate the Toolbox section (ToolboxItemsHost)
+        int hostStart = content.IndexOf("x:Name=\"ToolboxItemsHost\"", StringComparison.Ordinal);
+        int hostEnd = content.IndexOf("</ScrollViewer>", hostStart, StringComparison.Ordinal);
+
+        Assert.True(hostStart > 0 && hostEnd > hostStart);
+        string toolboxChunk = content.Substring(hostStart, hostEnd - hostStart);
+
+        var matches = EmojiPattern.Matches(toolboxChunk);
+        Assert.True(matches.Count == 0, $"Found {matches.Count} emojis in Toolbox: {string.Join(", ", matches)}");
+    }
+
+    [Fact]
+    public void LiveWatchView_ContainsNoRawEmojis()
+    {
+        string viewPath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "SimplePLC.Studio", "Views", "LiveWatchView.xaml");
+        if (!File.Exists(viewPath))
+        {
+            viewPath = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "SimplePLC.Studio", "Views", "LiveWatchView.xaml"));
+        }
+
+        Assert.True(File.Exists(viewPath), $"LiveWatchView.xaml not found at: {viewPath}");
+        string content = File.ReadAllText(viewPath);
+
+        var matches = EmojiPattern.Matches(content);
+        Assert.True(matches.Count == 0, $"Found {matches.Count} emojis in LiveWatchView.xaml: {string.Join(", ", matches)}");
+    }
+
+    [Fact]
+    public void LocalizationService_ToolboxAndTabKeys_ContainNoEmojis()
+    {
+        var loc = LocalizationService.Instance;
+
+        string[] checkKeys =
+        {
+            "TabLogicGraph", "TabTagCatalog", "TabRuleTable", "TabBlueprints", "TabLiveWatch",
+            "ToolboxIoCategory", "ToolboxLogicCategory", "ToolboxTimerCategory", "ToolboxCounterCategory",
+            "ToolboxAnalogCategory", "ToolboxMqttCategory",
+            "ToolboxTonTitle", "ToolboxTofTitle", "ToolboxTpTitle", "ToolboxCycleTitle",
+            "ToolboxCtuTitle", "ToolboxCtdTitle", "ToolboxScaleTitle",
+            "LiveWatchModeSafe", "LiveWatchModeManual", "FilterWatchlist"
+        };
+
+        string origLang = loc.CurrentLanguage;
+        try
+        {
+            foreach (var lang in new[] { "en", "vi" })
+            {
+                loc.CurrentLanguage = lang;
+                foreach (var key in checkKeys)
+                {
+                    string val = loc[key];
+                    var matches = EmojiPattern.Matches(val);
+                    Assert.True(matches.Count == 0, $"Key '{key}' in lang '{lang}' contains emoji '{val}'");
+                }
+            }
+        }
+        finally
+        {
+            loc.CurrentLanguage = origLang;
+        }
+    }
+
+    [Fact]
+    public void DtuGatewayStudioView_AllReferencedIcons_ExistInIconsResourceDictionary()
+    {
+        string dtuViewPath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "SimplePLC.Studio", "Views", "DtuGatewayStudioView.xaml");
+        if (!File.Exists(dtuViewPath))
+        {
+            dtuViewPath = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "SimplePLC.Studio", "Views", "DtuGatewayStudioView.xaml"));
+        }
+
+        string iconsPath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "SimplePLC.Studio", "Styles", "Icons.xaml");
+        if (!File.Exists(iconsPath))
+        {
+            iconsPath = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "SimplePLC.Studio", "Styles", "Icons.xaml"));
+        }
+
+        Assert.True(File.Exists(dtuViewPath), $"DtuGatewayStudioView.xaml not found at: {dtuViewPath}");
+        Assert.True(File.Exists(iconsPath), $"Icons.xaml not found at: {iconsPath}");
+
+        string dtuContent = File.ReadAllText(dtuViewPath);
+        string iconsContent = File.ReadAllText(iconsPath);
+
+        var usedIcons = Regex.Matches(dtuContent, @"\{StaticResource\s+(Icon[A-Za-z0-9_]+)\}");
+        foreach (Match match in usedIcons)
+        {
+            string iconKey = match.Groups[1].Value;
+            Assert.True(iconsContent.Contains($"x:Key=\"{iconKey}\""), $"Icon key '{iconKey}' referenced in DtuGatewayStudioView.xaml is missing from Icons.xaml.");
+        }
+    }
+}

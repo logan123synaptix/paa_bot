@@ -1,0 +1,415 @@
+using System.Text.Json.Nodes;
+
+namespace SimplePLC.Studio.Services.Ai;
+
+/// <summary>
+/// Đại diện cho một thao tác gọi công cụ (Tool Call) do mô hình AI phát ra.
+/// </summary>
+public record AiToolCall(string Name, JsonObject Arguments);
+
+/// <summary>
+/// Kho lưu trữ các schemas định nghĩa công cụ (Function Declarations) cho Gemini & OpenAI API.
+/// Tuân thủ quy chuẩn Strict Mode.
+/// </summary>
+public static class AiToolDeclarations
+{
+    public static JsonArray GetGeminiFunctionDeclarations()
+    {
+        return new JsonArray
+        {
+            BuildAddNodeSchema(),
+            BuildRemoveNodeSchema(),
+            BuildConnectWiresSchema(),
+            BuildDisconnectWireSchema(),
+            BuildConfigureTimerCounterSchema(),
+            BuildConfigureScaleSchema(),
+            BuildConfigureMathSchema(),
+            BuildConfigureComparatorSchema(),
+            BuildConfigureMqttSchema(),
+            BuildConfigureModbusSchema(),
+            BuildRenameTagSchema(),
+            BuildAutoLayoutGraphSchema(),
+            BuildDiagnoseLogicBugsSchema()
+        };
+    }
+
+    /// <summary>
+    /// Trả về mảng định nghĩa công cụ theo chuẩn OpenAI / Groq Chat Completions API.
+    /// Mỗi phần tử được bọc dưới dạng: { "type": "function", "function": { ... } }
+    /// </summary>
+    /// <returns>JsonArray chứa các công cụ theo đặc tả OpenAI Tools.</returns>
+    public static JsonArray GetOpenAiFunctionDeclarations()
+    {
+        var geminiTools = GetGeminiFunctionDeclarations();
+        var openAiTools = new JsonArray();
+        foreach (var tool in geminiTools)
+        {
+            if (tool != null)
+            {
+                openAiTools.Add(new JsonObject
+                {
+                    ["type"] = "function",
+                    ["function"] = tool.DeepClone()
+                });
+            }
+        }
+        return openAiTools;
+    }
+
+    private static JsonObject BuildAddNodeSchema()
+    {
+        return new JsonObject
+        {
+            ["name"] = "add_node",
+            ["description"] = "Tạo một khối logic mới trên FBD Canvas của SynaptiX IDE với tọa độ và cấu hình cụ thể.",
+            ["parameters"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["node_id"] = new JsonObject { ["type"] = "string", ["description"] = "Mã định danh duy nhất của khối (vd: 'node_in_start', 'node_act_pump')." },
+                    ["node_type"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Loại khối logic cần tạo.",
+                        ["enum"] = new JsonArray { "INPUT", "TRIGGER", "GUARD", "ACTION", "TIMER", "COUNTER", "SCALE", "MATH", "COMPARATOR", "MQTT_PUBLISH", "MQTT_SUBSCRIBE", "MODBUS_READ", "MODBUS_WRITE" }
+                    },
+                    ["custom_label"] = new JsonObject { ["type"] = "string", ["description"] = "Nhãn gợi nhớ hiển thị trên đỉnh của khối trên FBD Canvas. BẮT BUỘC viết theo ngôn ngữ giao diện phần mềm (App Presentation Language: English nếu UI đang English, Tiếng Việt nếu UI đang Tiếng Việt). Ví dụ: 'Alarm Sensor', 'Door Close Action' hoặc 'Cảm Biến Báo Động', 'Đóng Cửa'." },
+                    ["position_x"] = new JsonObject { ["type"] = "number", ["description"] = "Tọa độ X trên canvas (bước nhảy lưới tiêu chuẩn 240px)." },
+                    ["position_y"] = new JsonObject { ["type"] = "number", ["description"] = "Tọa độ Y trên canvas." },
+                    ["tag_name"] = new JsonObject { ["type"] = "string", ["description"] = "Mã Tag liên kết (chỉ áp dụng cho INPUT, GUARD, ACTION, MQTT, MODBUS). Vd: 'DI0', 'DO1', 'VFLAG0', hoặc 'NONE'." },
+                    ["trigger_type"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Kiểu kích hoạt (chỉ áp dụng cho TRIGGER).",
+                        ["enum"] = new JsonArray { "NONE", "ON_CHANGE", "ON_RISE", "ON_FALL", "INTERVAL", "TIME_WINDOW" }
+                    },
+                    ["compare_op"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Toán tử so sánh ngưỡng.",
+                        ["enum"] = new JsonArray { "NONE", "EQ", "NEQ", "GT", "LT", "GTE", "LTE", "BETWEEN" }
+                    },
+                    ["threshold_lo"] = new JsonObject { ["type"] = "integer", ["description"] = "Ngưỡng so sánh dưới. Mặc định 0." },
+                    ["threshold_hi"] = new JsonObject { ["type"] = "integer", ["description"] = "Ngưỡng so sánh trên (chỉ dùng khi BETWEEN). Mặc định 0." },
+                    ["debounce_ms"] = new JsonObject { ["type"] = "integer", ["description"] = "Thời gian lọc nhiễu dội phím hoặc for_ms (ms)." },
+                    ["action_type"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Hành vi thực thi (chỉ cho ACTION).",
+                        ["enum"] = new JsonArray { "NONE", "SET_TAG", "TOGGLE_TAG", "INC_COUNTER", "ADD_TAG", "SCALE_TAG" }
+                    },
+                    ["action_param"] = new JsonObject { ["type"] = "integer", ["description"] = "Tham số tác vụ (1: bật, 0: tắt, +1: đếm)." },
+                    ["topic"] = new JsonObject { ["type"] = "string", ["description"] = "Chủ đề MQTT Topic (cho MQTT_PUBLISH, MQTT_SUBSCRIBE)." },
+                    ["payload_mode"] = new JsonObject { ["type"] = "string", ["description"] = "Định dạng gói tin MQTT ('JSON', 'Raw', 'Custom')." },
+                    ["qos"] = new JsonObject { ["type"] = "integer", ["description"] = "Chất lượng dịch vụ MQTT QoS (0, 1, 2)." },
+                    ["retain"] = new JsonObject { ["type"] = "boolean", ["description"] = "Cờ MQTT Retain." },
+                    ["port"] = new JsonObject { ["type"] = "integer", ["description"] = "Chỉ số cổng RS-485 Modbus (0..3)." },
+                    ["slave_id"] = new JsonObject { ["type"] = "integer", ["description"] = "Mã Slave ID Modbus (1..247)." },
+                    ["function_code"] = new JsonObject { ["type"] = "integer", ["description"] = "Mã hàm Modbus (1..16, vd: 3 cho ReadHoldingRegisters, 16 cho WriteMultipleRegisters)." },
+                    ["address"] = new JsonObject { ["type"] = "integer", ["description"] = "Địa chỉ thanh ghi Modbus (0..65535)." },
+                    ["count"] = new JsonObject { ["type"] = "integer", ["description"] = "Số lượng thanh ghi Modbus đọc/ghi (1..125)." }
+                },
+                ["required"] = new JsonArray
+                {
+                    "node_id", "node_type", "custom_label", "position_x", "position_y",
+                    "tag_name", "trigger_type", "compare_op", "threshold_lo",
+                    "threshold_hi", "debounce_ms", "action_type", "action_param"
+                }
+            }
+        };
+    }
+
+    private static JsonObject BuildRemoveNodeSchema()
+    {
+        return new JsonObject
+        {
+            ["name"] = "remove_node",
+            ["description"] = "Xóa một khối logic khỏi Canvas dựa trên Node ID, đồng thời tự động thu hồi tất cả các dây nối liên kết.",
+            ["parameters"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["node_id"] = new JsonObject { ["type"] = "string", ["description"] = "Định danh duy nhất của khối cần xóa." },
+                    ["reason"] = new JsonObject { ["type"] = "string", ["description"] = "Lý do kỹ thuật giải thích việc loại bỏ khối này." }
+                },
+                ["required"] = new JsonArray { "node_id", "reason" }
+            }
+        };
+    }
+
+    private static JsonObject BuildConnectWiresSchema()
+    {
+        return new JsonObject
+        {
+            ["name"] = "connect_wires",
+            ["description"] = "Tạo đường dây nối truyền tín hiệu giữa cổng xuất (Out) của một khối nguồn tới cổng nhập (In) của một khối đích.",
+            ["parameters"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["connection_id"] = new JsonObject { ["type"] = "string", ["description"] = "Mã định danh duy nhất cho đường dây mới." },
+                    ["source_node_id"] = new JsonObject { ["type"] = "string", ["description"] = "Mã định danh của khối nguồn phát." },
+                    ["source_connector_title"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Tên cổng xuất của khối nguồn ('Out', 'Q', hoặc 'OUT').",
+                        ["enum"] = new JsonArray { "Out", "Q", "OUT" }
+                    },
+                    ["target_node_id"] = new JsonObject { ["type"] = "string", ["description"] = "Mã định danh của khối đích nhận." },
+                    ["target_connector_title"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Tên cổng nhập của khối đích ('In', 'CU', 'CD', 'R', 'IN').",
+                        ["enum"] = new JsonArray { "In", "CU", "CD", "R", "IN" }
+                    }
+                },
+                ["required"] = new JsonArray { "connection_id", "source_node_id", "source_connector_title", "target_node_id", "target_connector_title" }
+            }
+        };
+    }
+
+    private static JsonObject BuildDisconnectWireSchema()
+    {
+        return new JsonObject
+        {
+            ["name"] = "disconnect_wire",
+            ["description"] = "Gỡ bỏ một đường dây kết nối cụ thể giữa hai khối trên Canvas.",
+            ["parameters"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["connection_id"] = new JsonObject { ["type"] = "string", ["description"] = "Mã định danh của dây cần gỡ hoặc 'AUTO'." },
+                    ["source_node_id"] = new JsonObject { ["type"] = "string", ["description"] = "ID khối nguồn phát." },
+                    ["target_node_id"] = new JsonObject { ["type"] = "string", ["description"] = "ID khối đích nhận." }
+                },
+                ["required"] = new JsonArray { "connection_id", "source_node_id", "target_node_id" }
+            }
+        };
+    }
+
+    private static JsonObject BuildConfigureTimerCounterSchema()
+    {
+        return new JsonObject
+        {
+            ["name"] = "configure_timer_counter",
+            ["description"] = "Cấu hình chi tiết tham số vận hành cho khối Macro Timer (TON/TOF/TP) hoặc Counter (CTU/CTD) hiện có trên Canvas.",
+            ["parameters"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["node_id"] = new JsonObject { ["type"] = "string", ["description"] = "ID của khối Timer hoặc Counter cần cấu hình." },
+                    ["mode"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Chế độ định thời hoặc đếm.",
+                        ["enum"] = new JsonArray { "TON", "TOF", "TP", "CTU", "CTD" }
+                    },
+                    ["preset_value"] = new JsonObject { ["type"] = "integer", ["description"] = "Thời gian đặt PT (ms cho Timer) hoặc giá trị đếm PV (cho Counter)." },
+                    ["input_tag_name"] = new JsonObject { ["type"] = "string", ["description"] = "Mã Tag đầu vào kích hoạt khối (vd: 'VFLAG0', 'DI0', 'NONE')." },
+                    ["cv_tag_name"] = new JsonObject { ["type"] = "string", ["description"] = "Tag lưu giá trị đếm hiện thời CV (cho Counter)." },
+                    ["reset_tag_name"] = new JsonObject { ["type"] = "string", ["description"] = "Tag tín hiệu xóa bộ đếm Reset." },
+                    ["output_tag_name"] = new JsonObject { ["type"] = "string", ["description"] = "Tag ngõ ra chỉ thị đạt ngưỡng Q (vd: 'DO0', 'VFLAG1')." }
+                },
+                ["required"] = new JsonArray { "node_id", "mode", "preset_value", "input_tag_name", "cv_tag_name", "reset_tag_name", "output_tag_name" }
+            }
+        };
+    }
+
+    private static JsonObject BuildConfigureScaleSchema()
+    {
+        return new JsonObject
+        {
+            ["name"] = "configure_scale",
+            ["description"] = "Cấu hình tham số biến đổi tuyến tính tín hiệu tương tự (Analog Linear Scaling: y = Gain * x + Offset) và giới hạn kẹp an toàn cho khối SCALE.",
+            ["parameters"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["node_id"] = new JsonObject { ["type"] = "string", ["description"] = "ID của khối SCALE cần cấu hình." },
+                    ["gain"] = new JsonObject { ["type"] = "number", ["description"] = "Hệ số Gain." },
+                    ["offset"] = new JsonObject { ["type"] = "number", ["description"] = "Hệ số Offset." },
+                    ["unit"] = new JsonObject { ["type"] = "string", ["description"] = "Đơn vị vật lý kỹ thuật hiển thị ('bar', '°C', 'RPM')." },
+                    ["decimal_places"] = new JsonObject { ["type"] = "integer", ["description"] = "Số chữ số thập phân hiển thị (mặc định 1)." },
+                    ["is_clamped"] = new JsonObject { ["type"] = "boolean", ["description"] = "Kích hoạt giới hạn kẹp an toàn." },
+                    ["clamp_min"] = new JsonObject { ["type"] = "number", ["description"] = "Giá trị kẹp dưới an toàn." },
+                    ["clamp_max"] = new JsonObject { ["type"] = "number", ["description"] = "Giá trị kẹp trên an toàn." }
+                },
+                ["required"] = new JsonArray { "node_id", "gain", "offset", "unit", "decimal_places", "is_clamped", "clamp_min", "clamp_max" }
+            }
+        };
+    }
+
+    private static JsonObject BuildConfigureMathSchema()
+    {
+        return new JsonObject
+        {
+            ["name"] = "configure_math",
+            ["description"] = "Cấu hình tham số vận hành cho khối tính toán số học Math ALU (IEC 61131-3) trên Canvas: toán tử (ADD, SUB, MUL, DIV, MOD, MIN, MAX, CLAMP), kiểu dữ liệu (Auto, ForceInt32, ForceReal), Tag ngõ ra và giá trị/Tag cho 2 toán hạng ngõ vào.",
+            ["parameters"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["node_id"] = new JsonObject { ["type"] = "string", ["description"] = "ID của khối MATH cần cấu hình." },
+                    ["operator"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Toán tử số học đại số.",
+                        ["enum"] = new JsonArray { "ADD", "SUB", "MUL", "DIV", "MOD", "MIN", "MAX", "CLAMP" }
+                    },
+                    ["type_mode"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Chế độ kiểu dữ liệu kết quả.",
+                        ["enum"] = new JsonArray { "Auto", "ForceInt32", "ForceReal" }
+                    },
+                    ["output_tag"] = new JsonObject { ["type"] = "string", ["description"] = "Tag ngõ ra đích ghi nhận kết quả (vd: 'VREG0', 'AO0')." },
+                    ["pin1_tag_or_value"] = new JsonObject { ["type"] = "string", ["description"] = "Tên Tag hoặc giá trị hằng số cho toán hạng đầu vào 1 (IN1)." },
+                    ["pin1_is_constant"] = new JsonObject { ["type"] = "boolean", ["description"] = "True nếu toán hạng 1 là hằng số cố định, False nếu là Tag." },
+                    ["pin2_tag_or_value"] = new JsonObject { ["type"] = "string", ["description"] = "Tên Tag hoặc giá trị hằng số cho toán hạng đầu vào 2 (IN2)." },
+                    ["pin2_is_constant"] = new JsonObject { ["type"] = "boolean", ["description"] = "True nếu toán hạng 2 là hằng số cố định, False nếu là Tag." },
+                    ["clamp_min"] = new JsonObject { ["type"] = "number", ["description"] = "Giá trị chặn dưới an toàn khi toán tử là CLAMP (mặc định 0)." },
+                    ["clamp_max"] = new JsonObject { ["type"] = "number", ["description"] = "Giá trị chặn trên an toàn khi toán tử là CLAMP (mặc định 100)." }
+                },
+                ["required"] = new JsonArray { "node_id", "operator", "type_mode", "output_tag", "pin1_tag_or_value", "pin1_is_constant", "pin2_tag_or_value", "pin2_is_constant", "clamp_min", "clamp_max" }
+            }
+        };
+    }
+
+    private static JsonObject BuildConfigureComparatorSchema()
+    {
+        return new JsonObject
+        {
+            ["name"] = "configure_comparator",
+            ["description"] = "Cấu hình toán tử so sánh quan hệ và ngưỡng so sánh cho khối COMPARATOR (CMP).",
+            ["parameters"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["node_id"] = new JsonObject { ["type"] = "string", ["description"] = "ID của khối COMPARATOR cần cấu hình." },
+                    ["compare_op"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Toán tử so sánh (EQ, NEQ, GT, LT, GTE, LTE, BETWEEN).",
+                        ["enum"] = new JsonArray { "EQ", "NEQ", "GT", "LT", "GTE", "LTE", "BETWEEN" }
+                    },
+                    ["threshold_lo"] = new JsonObject { ["type"] = "number", ["description"] = "Ngưỡng so sánh dưới." },
+                    ["threshold_hi"] = new JsonObject { ["type"] = "number", ["description"] = "Ngưỡng so sánh trên (chỉ dùng khi BETWEEN)." }
+                },
+                ["required"] = new JsonArray { "node_id", "compare_op", "threshold_lo" }
+            }
+        };
+    }
+
+    private static JsonObject BuildRenameTagSchema()
+    {
+        return new JsonObject
+        {
+            ["name"] = "rename_tag",
+            ["description"] = "Cập nhật bí danh gợi nhớ (Alias) hoặc mô tả kỹ thuật cho một Tag trong danh bạ Tag Catalog.",
+            ["parameters"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["tag_name"] = new JsonObject { ["type"] = "string", ["description"] = "Mã Tag phần cứng hệ thống (vd: 'DI0', 'DO1', 'VFLAG0')." },
+                    ["new_alias"] = new JsonObject { ["type"] = "string", ["description"] = "Tên bí danh gợi nhớ mới." },
+                    ["description"] = new JsonObject { ["type"] = "string", ["description"] = "Mô tả chi tiết vị trí lắp đặt hoặc công năng." }
+                },
+                ["required"] = new JsonArray { "tag_name", "new_alias", "description" }
+            }
+        };
+    }
+
+    private static JsonObject BuildAutoLayoutGraphSchema()
+    {
+        return new JsonObject
+        {
+            ["name"] = "auto_layout_graph",
+            ["description"] = "Tự động sắp xếp vị trí các khối trên Canvas theo cấu trúc phân tầng công nghiệp (Sugiyama Layered Layout).",
+            ["parameters"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["diagram_id"] = new JsonObject { ["type"] = "string", ["description"] = "Định danh sơ đồ hoặc 'ALL'." },
+                    ["horizontal_spacing"] = new JsonObject { ["type"] = "number", ["description"] = "Khoảng cách giữa các cột (mặc định 260)." },
+                    ["vertical_spacing"] = new JsonObject { ["type"] = "number", ["description"] = "Khoảng cách giữa các hàng (mặc định 120)." }
+                },
+                ["required"] = new JsonArray { "diagram_id", "horizontal_spacing", "vertical_spacing" }
+            }
+        };
+    }
+
+    private static JsonObject BuildConfigureMqttSchema()
+    {
+        return new JsonObject
+        {
+            ["name"] = "configure_mqtt",
+            ["description"] = "Cấu hình chi tiết tham số truyền thông IoT MQTT (Topic, QoS, Payload mode, Retain) cho khối MqttPublish / MqttSubscribe.",
+            ["parameters"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["node_id"] = new JsonObject { ["type"] = "string", ["description"] = "Mã định danh của khối MQTT." },
+                    ["topic"] = new JsonObject { ["type"] = "string", ["description"] = "Chủ đề MQTT Topic (vd: 'factory/sensor/temperature')." },
+                    ["payload_mode"] = new JsonObject { ["type"] = "string", ["description"] = "Định dạng tải dữ liệu: 'JSON', 'Raw', hoặc 'Custom'." },
+                    ["qos"] = new JsonObject { ["type"] = "integer", ["description"] = "Mức QoS: 0, 1 hoặc 2." },
+                    ["retain"] = new JsonObject { ["type"] = "boolean", ["description"] = "Cờ lưu giữ tin nhắn MQTT Retain." }
+                },
+                ["required"] = new JsonArray { "node_id", "topic" }
+            }
+        };
+    }
+
+    private static JsonObject BuildConfigureModbusSchema()
+    {
+        return new JsonObject
+        {
+            ["name"] = "configure_modbus",
+            ["description"] = "Cấu hình chi tiết tham số mạng truyền thông RS-485 Modbus Master (Port, Slave ID, Function Code, Address, Count).",
+            ["parameters"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["node_id"] = new JsonObject { ["type"] = "string", ["description"] = "Mã định danh của khối Modbus." },
+                    ["port"] = new JsonObject { ["type"] = "integer", ["description"] = "Chỉ số cổng RS-485 (0..3)." },
+                    ["slave_id"] = new JsonObject { ["type"] = "integer", ["description"] = "Mã trạm Modbus Slave ID (1..247)." },
+                    ["function_code"] = new JsonObject { ["type"] = "integer", ["description"] = "Mã hàm Modbus: 1 (Read Coils), 2 (Discrete Inputs), 3 (Holding Registers), 4 (Input Registers), 5, 6, 15, 16." },
+                    ["address"] = new JsonObject { ["type"] = "integer", ["description"] = "Địa chỉ thanh ghi Modbus bắt đầu (0..65535)." },
+                    ["count"] = new JsonObject { ["type"] = "integer", ["description"] = "Số lượng điểm / thanh ghi (1..125)." }
+                },
+                ["required"] = new JsonArray { "node_id", "slave_id", "address" }
+            }
+        };
+    }
+
+    private static JsonObject BuildDiagnoseLogicBugsSchema()
+    {
+        return new JsonObject
+        {
+            ["name"] = "diagnose_logic_bugs",
+            ["description"] = "Kích hoạt bộ kiểm tra tĩnh toàn diện của SynaptiX IDE (Graph Grammar, Xung đột ghi Write Conflict, Chu trình lặp Cyclic Dependency) để phát hiện lỗi logic tiềm ẩn.",
+            ["parameters"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["check_write_conflicts"] = new JsonObject { ["type"] = "boolean", ["description"] = "Kiểm tra xung đột ghi đè nhiều Action vào 1 Tag." },
+                    ["check_cyclic_loops"] = new JsonObject { ["type"] = "boolean", ["description"] = "Kiểm tra chu trình khép kín gây bất định chu kỳ quét." },
+                    ["auto_propose_fixes"] = new JsonObject { ["type"] = "boolean", ["description"] = "Tự động đề xuất phương án sửa chữa." }
+                },
+                ["required"] = new JsonArray { "check_write_conflicts", "check_cyclic_loops", "auto_propose_fixes" }
+            }
+        };
+    }
+}

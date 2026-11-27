@@ -1,0 +1,24 @@
+<Window x:Class="SimplePLC.Studio.Views.DtuGatewayConfigDialogView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:services="clr-namespace:SimplePLC.Studio.Services"
+        xmlns:controls="clr-namespace:SimplePLC.Studio.Controls"
+        xmlns:views="clr-namespace:SimplePLC.Studio.Views"
+        Title="{Binding [DtuWizardTitle], Source={x:Static services:LocalizationService.Instance}}"
+        Width="1120" Height="700"
+        MinWidth="1040" MinHeight="620"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="CanResizeWithGrip"
+        controls:WindowChromeHelper.EnableIndependentMinimize="True"
+        ShowInTaskbar="True"
+        Background="{DynamicResource BgWindowBrush}"
+        Icon="../Assets/app.png"
+        FontFamily="Segoe UI"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType"
+        RenderOptions.ClearTypeHint="Enabled">
+
+    <Grid>
+        <views:DtuGatewayStudioView />
+    </Grid>
+</Window>

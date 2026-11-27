@@ -1,0 +1,1584 @@
+<Window x:Class="SimplePLC.Studio.Views.ModbusWriteConfigDialogView"
+
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+
+        xmlns:services="clr-namespace:SimplePLC.Studio.Services"
+
+        xmlns:controls="clr-namespace:SimplePLC.Studio.Controls"
+        xmlns:converters="clr-namespace:SimplePLC.Studio.Converters"
+        xmlns:vm="clr-namespace:SimplePLC.Studio.ViewModels"
+
+        Title="{Binding [ModbusWriteDialogTitle], Source={x:Static services:LocalizationService.Instance}}"
+
+        Width="1160" Height="660"
+
+        ResizeMode="CanResizeWithGrip"
+
+        controls:WindowChromeHelper.EnableIndependentMinimize="True"
+
+        Icon="../Assets/app.png"
+
+        WindowStartupLocation="CenterOwner"
+
+        ShowInTaskbar="True"
+
+        MaxWidth="{Binding Source={x:Static SystemParameters.WorkArea}, Path=Width}"
+
+        MaxHeight="{Binding Source={x:Static SystemParameters.WorkArea}, Path=Height}"
+
+        Background="{DynamicResource BgWindowBrush}"
+
+        FontFamily="Segoe UI"
+
+        TextOptions.TextFormattingMode="Display"
+
+        TextOptions.TextRenderingMode="ClearType"
+
+        RenderOptions.ClearTypeHint="Enabled"
+        MinWidth="1040"
+        MinHeight="600">
+
+
+
+    <Window.Resources>
+
+        <ResourceDictionary>
+
+            <ResourceDictionary.MergedDictionaries>
+
+                <ResourceDictionary Source="../Styles/Colors.xaml" />
+
+                <ResourceDictionary Source="../Styles/Controls.xaml" />
+
+            </ResourceDictionary.MergedDictionaries>
+
+            <BooleanToVisibilityConverter x:Key="BoolToVis" />
+            <converters:BooleanToVisibilityConverterEx x:Key="InverseBoolToVis" Invert="True" />
+
+        </ResourceDictionary>
+
+    </Window.Resources>
+
+
+
+    <Border BorderBrush="{DynamicResource IndustrialBorderDefaultBrush}" BorderThickness="1">
+
+        <Grid Margin="16">
+
+            <Grid.RowDefinitions>
+
+                <!-- 0. Header -->
+
+                <RowDefinition Height="Auto" />
+
+                <!-- 1. Content Two-Column Body -->
+
+                <RowDefinition Height="*" />
+
+                <!-- 2. Footer Actions -->
+
+                <RowDefinition Height="Auto" />
+
+            </Grid.RowDefinitions>
+
+
+
+            <!-- 0. Header -->
+
+            <Grid Grid.Row="0" Margin="0,0,0,12">
+
+                <Grid.ColumnDefinitions>
+
+                    <ColumnDefinition Width="Auto" />
+
+                    <ColumnDefinition Width="*" />
+
+                </Grid.ColumnDefinitions>
+
+
+
+                <Border Grid.Column="0" Width="40" Height="40" Background="{DynamicResource BgSubtleBrush}" BorderBrush="{DynamicResource IndustrialBorderDefaultBrush}" BorderThickness="1" CornerRadius="2" Margin="0,0,12,0">
+                    <Path Style="{StaticResource IecStatusIconStyle}" Data="{StaticResource IconSysUpload}" Stroke="{DynamicResource PrimaryBrush}" Width="18" Height="18" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
+
+
+
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+
+                    <TextBlock Text="{Binding [ModbusWriteDialogTitle], Source={x:Static services:LocalizationService.Instance}}" 
+
+                               FontSize="14.5" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" />
+
+                    <TextBlock Text="{Binding [ModbusWriteDialogSubtitle], Source={x:Static services:LocalizationService.Instance}}" 
+
+                               FontSize="11" Foreground="{DynamicResource TextMutedBrush}" Margin="0,2,0,0" />
+
+                </StackPanel>
+
+            </Grid>
+
+
+
+            <!-- 1. Two-Column Body (Left: Wide Parameters & Mapping/Pins, Right: Live Hex Test) -->
+
+            <Grid Grid.Row="1" Margin="0,0,0,12">
+
+                <Grid.ColumnDefinitions>
+
+                    <!-- Left: Parameters & Mapping / Pins -->
+
+                    <ColumnDefinition Width="*" MinWidth="680" />
+
+                    <ColumnDefinition Width="14" />
+
+                    <!-- Right: Live Hex Test (Fixed ergonomic width) -->
+
+                    <ColumnDefinition Width="380" MinWidth="340" />
+
+                </Grid.ColumnDefinitions>
+
+
+
+                <!-- LEFT PANE: MODBUS WRITE CONFIGURATION -->
+
+                <Border Grid.Column="0" Background="{DynamicResource BgPanelBrush}" BorderBrush="{DynamicResource IndustrialBorderSubtleBrush}" BorderThickness="1" CornerRadius="2" Padding="14">
+
+                    <Grid>
+
+                        <Grid.RowDefinitions>
+
+                            <RowDefinition Height="Auto" />
+
+                            <RowDefinition Height="Auto" />
+
+                            <RowDefinition Height="Auto" />
+
+                            <RowDefinition Height="*" />
+
+                        </Grid.RowDefinitions>
+
+
+
+                        <!-- Section Title -->
+
+                        <TextBlock Grid.Row="0" Text="{Binding [ModbusWriteCommSection], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                   FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" FontSize="11" Margin="0,0,0,8" />
+
+
+
+                        <!-- Form Parameters Grid (Clean Rows with plenty of width) -->
+
+                        <Grid Grid.Row="1" Margin="0,0,0,12">
+
+                            <Grid.RowDefinitions>
+
+                                <!-- Row 0: Port | Slave ID | Mode -->
+
+                                <RowDefinition Height="Auto" />
+
+                                <!-- Row 1: Mode-Specific Settings -->
+
+                                <RowDefinition Height="Auto" />
+
+                                <RowDefinition Height="8" />
+
+                                <!-- Row 3: Timing & Options -->
+
+                                <RowDefinition Height="Auto" />
+
+                            </Grid.RowDefinitions>
+
+
+
+                            <!-- Row 0: Port (1.2*) | Slave ID (80px) | Mode (1.8*) -->
+
+                            <Grid Grid.Row="0" Margin="0,0,0,8">
+
+                                <Grid.ColumnDefinitions>
+
+                                    <ColumnDefinition Width="1.4*" />
+
+                                    <ColumnDefinition Width="10" />
+
+                                    <ColumnDefinition Width="80" />
+
+                                    <ColumnDefinition Width="10" />
+
+                                    <ColumnDefinition Width="1.6*" />
+
+                                </Grid.ColumnDefinitions>
+
+
+
+                                <!-- Port Selector -->
+
+                                <StackPanel Grid.Column="0" ToolTip="{Binding PortSelectorTooltip}">
+
+                                    <TextBlock Text="{Binding [ModbusPortSelectorLabel], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                               FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,4" />
+
+                                    <Grid Height="28">
+
+                                        <Grid.ColumnDefinitions>
+
+                                            <ColumnDefinition Width="*" />
+
+                                            <ColumnDefinition Width="Auto" />
+
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- Case 1: Has available enabled master ports -->
+
+                                        <ComboBox Grid.Column="0" 
+
+                                                  Visibility="{Binding HasAvailablePorts, Converter={StaticResource BoolToVis}}"
+
+                                                  ItemsSource="{Binding AvailablePorts}" 
+
+                                                  SelectedValue="{Binding PortIndex}" SelectedValuePath="Value" DisplayMemberPath="DisplayName"
+
+                                                  ToolTip="{Binding PortSelectorTooltip}" 
+
+                                                  Height="28" Padding="6,4" FontSize="11" VerticalContentAlignment="Center" BorderBrush="{DynamicResource IndustrialBorderDefaultBrush}" />
+
+                                        <Button Grid.Column="1" 
+
+                                                Visibility="{Binding HasAvailablePorts, Converter={StaticResource BoolToVis}}"
+
+                                                Command="{Binding OpenDevicePortSettingsCommand}"
+
+                                                Margin="4,0,0,0" Width="28" Height="28" Padding="0" Cursor="Hand"
+
+                                                ToolTip="{Binding [BtnOpenDevicePortSettings], Source={x:Static services:LocalizationService.Instance}}"
+
+                                                Style="{StaticResource TiaTactileBtnStyle}">
+
+                                            <Path Data="{StaticResource IconSysSettings}" Width="13" Height="13" Stretch="Uniform" Fill="{DynamicResource TextSecondaryBrush}" />
+
+                                        </Button>
+
+                                        <!-- Case 2: Option C -> Clean Neutral Inset Panel + Action Button -->
+
+                                        <Border Grid.Column="0" 
+
+                                                Visibility="{Binding HasNoAvailablePorts, Converter={StaticResource BoolToVis}}"
+
+                                                Background="{DynamicResource IndustrialSurfaceInsetBrush}" 
+
+                                                BorderBrush="{DynamicResource IndustrialBorderDefaultBrush}"
+
+                                                BorderThickness="1" CornerRadius="4" Height="28" Padding="8,0"
+
+                                                ToolTip="{Binding [ModbusNoPortsEnabledTooltip], Source={x:Static services:LocalizationService.Instance}}">
+
+                                            <Grid VerticalAlignment="Center">
+
+                                                <Grid.ColumnDefinitions>
+
+                                                    <ColumnDefinition Width="Auto" />
+
+                                                    <ColumnDefinition Width="*" />
+
+                                                </Grid.ColumnDefinitions>
+
+                                                <Path Grid.Column="0" Data="{StaticResource IconSysInfo}" Width="12" Height="12" Stretch="Uniform" 
+
+                                                      Fill="{DynamicResource TextMutedBrush}" Margin="0,0,6,0" VerticalAlignment="Center" />
+
+                                                <TextBlock Grid.Column="1" Text="{Binding NoPortsAvailableMessage}" 
+
+                                                           Foreground="{DynamicResource TextMutedBrush}" FontSize="11" 
+
+                                                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+
+                                            </Grid>
+
+                                        </Border>
+
+                                        <Button Grid.Column="1" 
+
+                                                Visibility="{Binding HasNoAvailablePorts, Converter={StaticResource BoolToVis}}"
+
+                                                Command="{Binding OpenDevicePortSettingsCommand}"
+
+                                                Margin="4,0,0,0" Height="28" Padding="8,0" Cursor="Hand"
+
+                                                ToolTip="{Binding [BtnOpenDevicePortSettings], Source={x:Static services:LocalizationService.Instance}}"
+
+                                                Style="{StaticResource TiaTactileBtnStyle}">
+
+                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+
+                                                <Path Data="{StaticResource IconSysSettings}" Width="12" Height="12" Stretch="Uniform" Fill="{DynamicResource TextSecondaryBrush}" Margin="0,0,5,0" VerticalAlignment="Center" />
+
+                                                <TextBlock Text="{Binding [BtnOpenDevicePortSettings], Source={x:Static services:LocalizationService.Instance}}" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" />
+
+                                            </StackPanel>
+
+                                        </Button>
+
+                                    </Grid>
+
+                                </StackPanel>
+
+
+
+                                <!-- Slave ID -->
+
+                                <StackPanel Grid.Column="2" ToolTip="{Binding [ModbusWriteColSlaveIdTooltip], Source={x:Static services:LocalizationService.Instance}}">
+
+                                    <TextBlock Text="{Binding [ModbusWriteColSlaveId], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                               FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,4" />
+
+                                    <TextBox Text="{Binding SlaveId, UpdateSourceTrigger=PropertyChanged}" 
+
+                                              Height="28" Padding="6,4" FontSize="11.5" FontFamily="Consolas" TextAlignment="Center" 
+
+                                              Background="{DynamicResource BgPanelBrush}" BorderBrush="{DynamicResource IndustrialBorderDefaultBrush}" VerticalContentAlignment="Center" />
+
+                                    <TextBlock Text="{Binding RestrictedIdErrorMessage}" 
+                                               Visibility="{Binding HasRestrictedIdError, Converter={StaticResource BoolToVis}}" 
+                                               FontSize="10" Foreground="{DynamicResource DangerBrush}" Margin="0,4,0,0" TextWrapping="Wrap" />
+
+                                </StackPanel>
+
+
+
+                                <!-- Write Mode -->
+
+                                <StackPanel Grid.Column="4" ToolTip="{Binding [ModbusWriteColModeTooltip], Source={x:Static services:LocalizationService.Instance}}">
+
+                                    <TextBlock Text="{Binding [ModbusWriteColMode], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                               FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,4" />
+
+                                    <ComboBox ItemsSource="{Binding AvailableWriteModes}" 
+
+                                              SelectedValue="{Binding WriteMode}" SelectedValuePath="Value" DisplayMemberPath="DisplayName" 
+
+                                              Height="28" Padding="6,4" FontSize="11" VerticalContentAlignment="Center" BorderBrush="{DynamicResource IndustrialBorderDefaultBrush}" />
+
+                                </StackPanel>
+
+                            </Grid>
+
+
+
+                            <!-- Row 1: Mode-Specific Parameters -->
+
+                            <!-- Case A: Channel-Indexed Mode -->
+
+                            <Grid Grid.Row="1" Visibility="{Binding IsChannelIndexedMode, Converter={StaticResource BoolToVis}}">
+
+                                <Grid.ColumnDefinitions>
+
+                                    <ColumnDefinition Width="1.3*" />
+
+                                    <ColumnDefinition Width="10" />
+
+                                    <ColumnDefinition Width="80" />
+
+                                    <ColumnDefinition Width="10" />
+
+                                    <ColumnDefinition Width="*" />
+
+                                    <ColumnDefinition Width="10" />
+
+                                    <ColumnDefinition Width="*" />
+
+                                </Grid.ColumnDefinitions>
+
+
+
+                                <!-- Trigger Mode -->
+
+                                <StackPanel Grid.Column="0" ToolTip="{Binding [ModbusWriteColTrigModeTooltip], Source={x:Static services:LocalizationService.Instance}}">
+
+                                    <TextBlock Text="{Binding [ModbusWriteColTrigMode], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                               FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,4" />
+
+                                    <ComboBox ItemsSource="{Binding AvailableTriggerModes}" 
+
+                                              SelectedValue="{Binding TriggerMode}" SelectedValuePath="Value" DisplayMemberPath="DisplayName" 
+
+                                              Height="28" Padding="6,4" FontSize="11" VerticalContentAlignment="Center" BorderBrush="{DynamicResource IndustrialBorderDefaultBrush}" />
+
+                                </StackPanel>
+
+
+
+                                <!-- Channel Count -->
+
+                                <StackPanel Grid.Column="2" ToolTip="{Binding [ModbusWriteColChCountTooltip], Source={x:Static services:LocalizationService.Instance}}">
+
+                                    <TextBlock Text="{Binding [ModbusWriteColChCount], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                               FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,4" />
+
+                                    <TextBox Text="{Binding ChannelCount, UpdateSourceTrigger=PropertyChanged}" 
+
+                                             Height="28" Padding="6,4" FontSize="11.5" FontFamily="Consolas" TextAlignment="Center" 
+
+                                             Background="{DynamicResource BgPanelBrush}" BorderBrush="{DynamicResource IndustrialBorderDefaultBrush}" VerticalContentAlignment="Center" />
+
+                                </StackPanel>
+
+
+
+                                <!-- Base Address Command -->
+
+                                <StackPanel Grid.Column="4" ToolTip="{Binding [ModbusWriteColBaseCmdTooltip], Source={x:Static services:LocalizationService.Instance}}">
+
+                                    <TextBlock Text="{Binding [ModbusWriteColBaseCmd], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                               FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,4" />
+
+                                    <TextBox Text="{Binding BaseAddressCommand, StringFormat={}{0:X4}, UpdateSourceTrigger=PropertyChanged}" 
+
+                                             Height="28" Padding="6,4" FontSize="11.5" FontFamily="Consolas" TextAlignment="Center" 
+
+                                             Background="{DynamicResource BgPanelBrush}" BorderBrush="{DynamicResource IndustrialBorderDefaultBrush}" VerticalContentAlignment="Center" />
+
+                                </StackPanel>
+
+
+
+                                <!-- Base Address Param -->
+
+                                <StackPanel Grid.Column="6" ToolTip="{Binding [ModbusWriteColBaseParamTooltip], Source={x:Static services:LocalizationService.Instance}}">
+
+                                    <TextBlock Text="{Binding [ModbusWriteColBaseParam], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                               FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,4" />
+
+                                    <TextBox Text="{Binding BaseAddressParam, StringFormat={}{0:X4}, UpdateSourceTrigger=PropertyChanged}" 
+
+                                             Height="28" Padding="6,4" FontSize="11.5" FontFamily="Consolas" TextAlignment="Center" 
+
+                                             Background="{DynamicResource BgPanelBrush}" BorderBrush="{DynamicResource IndustrialBorderDefaultBrush}" VerticalContentAlignment="Center" />
+
+                                </StackPanel>
+
+                            </Grid>
+
+
+
+                            <!-- Case B: Direct Registers Mode -->
+
+                            <Grid Grid.Row="1" Visibility="{Binding IsDirectRegistersMode, Converter={StaticResource BoolToVis}}">
+
+                                <Grid.ColumnDefinitions>
+
+                                    <ColumnDefinition Width="1.3*" />
+
+                                    <ColumnDefinition Width="10" />
+
+                                    <ColumnDefinition Width="1.4*" />
+
+                                    <ColumnDefinition Width="10" />
+
+                                    <ColumnDefinition Width="80" />
+
+                                    <ColumnDefinition Width="10" />
+
+                                    <ColumnDefinition Width="80" />
+
+                                </Grid.ColumnDefinitions>
+
+
+
+                                <!-- Trigger Mode -->
+
+                                <StackPanel Grid.Column="0" ToolTip="{Binding [ModbusWriteColTrigModeTooltip], Source={x:Static services:LocalizationService.Instance}}">
+
+                                    <TextBlock Text="{Binding [ModbusWriteColTrigMode], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                               FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,4" />
+
+                                    <ComboBox ItemsSource="{Binding AvailableTriggerModes}" 
+
+                                              SelectedValue="{Binding TriggerMode}" SelectedValuePath="Value" DisplayMemberPath="DisplayName" 
+
+                                              Height="28" Padding="6,4" FontSize="11" VerticalContentAlignment="Center" BorderBrush="{DynamicResource IndustrialBorderDefaultBrush}" />
+
+                                </StackPanel>
+
+
+
+                                <!-- Function Code -->
+
+                                <StackPanel Grid.Column="2" ToolTip="{Binding [ModbusWriteColFunctionCodeTooltip], Source={x:Static services:LocalizationService.Instance}}">
+
+                                    <TextBlock Text="{Binding [ModbusWriteColFunctionCode], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                               FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,4" />
+
+                                    <ComboBox ItemsSource="{Binding AvailableFunctionCodes}" 
+
+                                              SelectedValue="{Binding FunctionCode}" SelectedValuePath="Value" DisplayMemberPath="DisplayName" 
+
+                                              Height="28" Padding="6,4" FontSize="11" VerticalContentAlignment="Center" BorderBrush="{DynamicResource IndustrialBorderDefaultBrush}" />
+
+                                </StackPanel>
+
+
+
+                                <!-- Start Address -->
+
+                                <StackPanel Grid.Column="4" ToolTip="{Binding [ModbusWriteColStartAddrTooltip], Source={x:Static services:LocalizationService.Instance}}">
+
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                        <TextBlock Text="{Binding [ModbusWriteColStartAddr], Source={x:Static services:LocalizationService.Instance}}" 
+                                                   FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />
+                                        <Border Background="{DynamicResource IndustrialSurfaceInsetBrush}" CornerRadius="3" Padding="4,1" Margin="6,0,0,0">
+                                            <TextBlock Text="{Binding StartAddressModiconPreview}" 
+                                                       FontSize="10" FontWeight="SemiBold" FontFamily="Consolas" Foreground="{DynamicResource PrimaryBrush}" />
+                                        </Border>
+                                    </StackPanel>
+
+                                    <TextBox Text="{Binding StartAddress, UpdateSourceTrigger=PropertyChanged}" 
+
+                                             Height="28" Padding="6,4" FontSize="11.5" FontFamily="Consolas" TextAlignment="Center" 
+
+                                             Background="{DynamicResource BgPanelBrush}" BorderBrush="{DynamicResource IndustrialBorderDefaultBrush}" VerticalContentAlignment="Center" />
+
+                                </StackPanel>
+
+
+
+                                <!-- Point Count -->
+
+                                <StackPanel Grid.Column="6" ToolTip="{Binding [ModbusWriteColPointCountTooltip], Source={x:Static services:LocalizationService.Instance}}">
+
+                                    <TextBlock Text="{Binding [ModbusWriteColPointCount], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                               FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,4" />
+
+                                    <TextBox Text="{Binding PointCount, UpdateSourceTrigger=PropertyChanged}" 
+
+                                             IsEnabled="{Binding IsMultipleMode}"
+
+                                             Height="28" Padding="6,4" FontSize="11.5" FontFamily="Consolas" TextAlignment="Center" 
+
+                                             Background="{DynamicResource BgPanelBrush}" BorderBrush="{DynamicResource IndustrialBorderDefaultBrush}" VerticalContentAlignment="Center" />
+
+                                </StackPanel>
+
+                            </Grid>
+
+
+
+                            <!-- Row 3: Timing & Mode-Specific Option -->
+
+                            <Grid Grid.Row="3">
+
+                                <Grid.ColumnDefinitions>
+
+                                    <ColumnDefinition Width="120" />
+
+                                    <ColumnDefinition Width="12" />
+
+                                    <ColumnDefinition Width="135" />
+
+                                    <ColumnDefinition Width="12" />
+
+                                    <ColumnDefinition Width="*" />
+
+                                </Grid.ColumnDefinitions>
+
+
+
+                                <!-- Column 0: Timeout (Universal RS-485 Parameter) -->
+
+                                <StackPanel Grid.Column="0" ToolTip="{Binding [ModbusWriteColTimeoutTooltip], Source={x:Static services:LocalizationService.Instance}}">
+
+                                    <TextBlock Text="{Binding [ModbusWriteColTimeout], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                               FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,4" />
+
+                                    <TextBox Text="{Binding TimeoutMs, UpdateSourceTrigger=PropertyChanged}" 
+
+                                             Height="28" Padding="6,4" FontSize="11.5" FontFamily="Consolas" TextAlignment="Center" 
+
+                                             Background="{DynamicResource BgPanelBrush}" BorderBrush="{DynamicResource IndustrialBorderDefaultBrush}" VerticalContentAlignment="Center" />
+
+                                </StackPanel>
+
+
+
+                                <!-- Column 2: Dynamic Trigger Parameter (Interval or Deadband) -->
+
+                                <Grid Grid.Column="2" Visibility="{Binding HasTriggerParameter, Converter={StaticResource BoolToVis}}">
+
+                                    <!-- Case 1: Cyclic Interval -->
+
+                                    <StackPanel Visibility="{Binding IsCyclicMode, Converter={StaticResource BoolToVis}}"
+
+                                                ToolTip="{Binding [ModbusWriteColCyclicTooltip], Source={x:Static services:LocalizationService.Instance}}">
+
+                                        <TextBlock Text="{Binding [ModbusWriteColCyclic], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                                   FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,4" />
+
+                                        <TextBox Text="{Binding CyclicIntervalMs, UpdateSourceTrigger=PropertyChanged}" 
+
+                                                 Height="28" Padding="6,4" FontSize="11.5" FontFamily="Consolas" TextAlignment="Center" 
+
+                                                 Background="{DynamicResource BgPanelBrush}" BorderBrush="{DynamicResource IndustrialBorderDefaultBrush}" VerticalContentAlignment="Center" />
+
+                                    </StackPanel>
+
+
+
+                                    <!-- Case 2: OnDataChange Deadband -->
+
+                                    <StackPanel Visibility="{Binding IsOnDataChangeMode, Converter={StaticResource BoolToVis}}"
+
+                                                ToolTip="{Binding [ModbusWriteColDeadbandTooltip], Source={x:Static services:LocalizationService.Instance}}">
+
+                                        <TextBlock Text="{Binding [ModbusWriteColDeadbandLabel], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                                   FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,4" />
+
+                                        <TextBox Text="{Binding Deadband, UpdateSourceTrigger=PropertyChanged, StringFormat=F2}" 
+
+                                                 Height="28" Padding="6,4" FontSize="11.5" FontFamily="Consolas" TextAlignment="Center" 
+
+                                                 Background="{DynamicResource BgPanelBrush}" BorderBrush="{DynamicResource IndustrialBorderDefaultBrush}" VerticalContentAlignment="Center" />
+
+                                    </StackPanel>
+
+                                </Grid>
+
+
+
+                                <!-- Column 4: Exclusive Checkbox (ChannelIndexed) or Status Badge (Direct) -->
+
+                                <StackPanel Grid.Column="4" VerticalAlignment="Bottom" Margin="0,0,0,4">
+
+                                    <!-- Exclusive CheckBox -->
+
+                                    <CheckBox IsChecked="{Binding IsExclusiveChannel}" 
+
+                                              Visibility="{Binding IsChannelIndexedMode, Converter={StaticResource BoolToVis}}"
+
+                                              VerticalContentAlignment="Center"
+
+                                              ToolTip="{Binding [ModbusWriteExclusiveCheckTooltip], Source={x:Static services:LocalizationService.Instance}}">
+
+                                        <TextBlock Text="{Binding [ModbusWriteExclusiveCheck], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                                   FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" FontWeight="SemiBold" Margin="4,0,0,0" TextWrapping="Wrap" />
+
+                                    </CheckBox>
+
+                                </StackPanel>
+
+                            </Grid>
+
+                        </Grid>
+
+
+
+                        <!-- Clean Divider Line -->
+
+                        <Rectangle Grid.Row="2" Height="1" Fill="{DynamicResource IndustrialBorderSubtleBrush}" Margin="0,0,0,12" />
+
+
+
+                        <!-- Bottom Section: Dynamic Mapping Table or Pins Table -->
+
+                        <!-- A. Channel Mapping Table (Channel-Indexed Mode) -->
+
+                        <Grid Grid.Row="3" Visibility="{Binding IsChannelIndexedMode, Converter={StaticResource BoolToVis}}">
+
+                            <Grid.RowDefinitions>
+
+                                <RowDefinition Height="Auto" />
+
+                                <RowDefinition Height="*" />
+
+                            </Grid.RowDefinitions>
+
+
+
+                            <TextBlock Grid.Row="0" Text="{Binding [ModbusWriteSectionMapping], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                       FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" FontSize="11" Margin="0,0,0,6" />
+
+
+
+                            <Border Grid.Row="1" BorderBrush="{DynamicResource IndustrialBorderDefaultBrush}" BorderThickness="1" CornerRadius="2" Background="{DynamicResource BgPanelBrush}">
+
+                                <Grid>
+
+                                    <Grid.RowDefinitions>
+
+                                        <RowDefinition Height="Auto" />
+
+                                        <RowDefinition Height="*" />
+
+                                    </Grid.RowDefinitions>
+
+
+
+                                    <!-- Table Header -->
+
+                                    <Grid Grid.Row="0" Background="{DynamicResource BgSubtleBrush}" Height="28">
+
+                                        <Grid.ColumnDefinitions>
+
+                                            <ColumnDefinition Width="65" />
+
+                                            <ColumnDefinition Width="6" />
+
+                                            <ColumnDefinition Width="130" />
+
+                                            <ColumnDefinition Width="6" />
+
+                                            <ColumnDefinition Width="140" />
+
+                                            <ColumnDefinition Width="6" />
+
+                                            <ColumnDefinition Width="*" />
+
+                                        </Grid.ColumnDefinitions>
+
+                                        <TextBlock Grid.Column="0" Text="{Binding [ModbusWriteColChannel], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                                   FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="8,0" />
+
+                                        <TextBlock Grid.Column="2" Text="{Binding [ModbusWriteColCmdAddr], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                                   FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="4,0" />
+
+                                        <TextBlock Grid.Column="4" Text="{Binding [ModbusWriteColParamAddr], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                                   FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="4,0" />
+
+                                        <TextBlock Grid.Column="6" Text="{Binding [ModbusWriteColDescription], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                                   FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="6,0" />
+
+                                    </Grid>
+
+
+
+                                    <!-- Scrollable Rows -->
+
+                                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="4,2">
+
+                                        <ItemsControl ItemsSource="{Binding ChannelMappings}">
+
+                                            <ItemsControl.ItemTemplate>
+
+                                                <DataTemplate>
+
+                                                    <Border BorderBrush="{DynamicResource IndustrialBorderSubtleBrush}" BorderThickness="0,0,0,1" Padding="0,3">
+
+                                                        <Grid>
+
+                                                            <Grid.ColumnDefinitions>
+
+                                                                <ColumnDefinition Width="65" />
+
+                                                                <ColumnDefinition Width="6" />
+
+                                                                <ColumnDefinition Width="130" />
+
+                                                                <ColumnDefinition Width="6" />
+
+                                                                <ColumnDefinition Width="140" />
+
+                                                                <ColumnDefinition Width="6" />
+
+                                                                <ColumnDefinition Width="*" />
+
+                                                            </Grid.ColumnDefinitions>
+
+
+
+                                                            <!-- Channel Tag -->
+
+                                                            <Border Grid.Column="0" Background="{DynamicResource BgSubtleBrush}" BorderBrush="{DynamicResource IndustrialBorderDefaultBrush}" BorderThickness="1" CornerRadius="2" Padding="4,2" Margin="4,0">
+
+                                                                <TextBlock Text="{Binding ChannelDisplay}" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" HorizontalAlignment="Center" />
+
+                                                            </Border>
+
+
+
+                                                            <!-- Command Reg -->
+
+                                                            <TextBlock Grid.Column="2" Text="{Binding CommandRegHex}" 
+
+                                                                       FontSize="11" FontFamily="Consolas" FontWeight="SemiBold" Foreground="{DynamicResource IndustrialPrimaryBrush}" VerticalAlignment="Center" Margin="4,0" />
+
+
+
+                                                            <!-- Param Reg -->
+
+                                                            <TextBlock Grid.Column="4" Text="{Binding ParamRegHex}" 
+
+                                                                       FontSize="11" FontFamily="Consolas" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="4,0" />
+
+
+
+                                                            <!-- Description -->
+
+                                                            <TextBlock Grid.Column="6" Text="{Binding Description}" 
+
+                                                                       FontSize="11" Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center" Margin="6,0" />
+
+                                                        </Grid>
+
+                                                    </Border>
+
+                                                </DataTemplate>
+
+                                            </ItemsControl.ItemTemplate>
+
+                                        </ItemsControl>
+
+                                    </ScrollViewer>
+
+                                </Grid>
+
+                            </Border>
+
+                        </Grid>
+
+
+
+                        <!-- B. Direct Registers Pins Table (Direct Mode) -->
+
+                        <Grid Grid.Row="3" Visibility="{Binding IsDirectRegistersMode, Converter={StaticResource BoolToVis}}">
+
+                            <Grid.RowDefinitions>
+
+                                <RowDefinition Height="Auto" />
+
+                                <RowDefinition Height="*" />
+
+                                <RowDefinition Height="Auto" />
+
+                            </Grid.RowDefinitions>
+
+
+
+                            <TextBlock Grid.Row="0" Text="{Binding [ModbusWriteSectionPins], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                       FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" FontSize="11" Margin="0,0,0,6" />
+
+
+
+                            <Border Grid.Row="1" BorderBrush="{DynamicResource IndustrialBorderDefaultBrush}" BorderThickness="1" CornerRadius="2" Background="{DynamicResource BgPanelBrush}">
+
+                                <Grid>
+
+                                    <Grid.RowDefinitions>
+
+                                        <RowDefinition Height="Auto" />
+
+                                        <RowDefinition Height="*" />
+
+                                    </Grid.RowDefinitions>
+
+
+
+                                    <!-- Table Header -->
+
+                                    <Grid Grid.Row="0" Background="{DynamicResource BgSubtleBrush}" Height="28">
+
+                                        <Grid.ColumnDefinitions>
+
+                                            <ColumnDefinition Width="*" MinWidth="90" />
+
+                                            <ColumnDefinition Width="6" />
+
+                                            <ColumnDefinition Width="150" />
+
+                                            <ColumnDefinition Width="6" />
+
+                                            <ColumnDefinition Width="46" />
+
+                                            <ColumnDefinition Width="6" />
+
+                                            <ColumnDefinition Width="105" />
+
+                                            <ColumnDefinition Width="6" />
+
+                                            <ColumnDefinition Width="120" />
+
+                                            <ColumnDefinition Width="6" />
+
+                                            <ColumnDefinition Width="46" />
+
+                                            <ColumnDefinition Width="6" />
+
+                                            <ColumnDefinition Width="28" />
+
+                                        </Grid.ColumnDefinitions>
+
+                                        <TextBlock Grid.Column="0" Text="{Binding [ModbusColPinName], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                                   FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="8,0" />
+
+                                        <TextBlock Grid.Column="2" Text="{Binding [ModbusColTargetTag], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                                   ToolTip="{Binding [ModbusColTargetTagTooltip], Source={x:Static services:LocalizationService.Instance}}"
+
+                                                   FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="4,0" />
+
+                                        <TextBlock Grid.Column="4" Text="{Binding [ModbusColOffset], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                                   FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" TextAlignment="Center" />
+
+                                        <TextBlock Grid.Column="6" Text="{Binding [MqttSubColType], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                                   FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="4,0" />
+
+                                        <TextBlock Grid.Column="8" Text="{Binding [ModbusColEndian], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                                   FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="4,0" />
+
+                                        <TextBlock Grid.Column="10" Text="{Binding [ModbusColScale], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                                   FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" TextAlignment="Center" />
+
+                                    </Grid>
+
+
+
+                                    <!-- Empty Prompt -->
+
+                                    <StackPanel Grid.Row="1" Visibility="{Binding HasNoPins, Converter={StaticResource BoolToVis}}" 
+                                                HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,20">
+                                        <Path Style="{StaticResource IecStatusIconStyle}" Data="{StaticResource IconSysClipboard}" Stroke="{DynamicResource TextMutedBrush}" Width="24" Height="24" HorizontalAlignment="Center" Margin="0,0,0,4" Opacity="0.5" />
+                                        <TextBlock Text="{Binding [ModbusPinsEmptyTitle], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                                   FontWeight="SemiBold" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" HorizontalAlignment="Center" />
+
+                                    </StackPanel>
+
+
+
+                                    <!-- Rows -->
+
+                                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" 
+
+                                                  Visibility="{Binding HasPins, Converter={StaticResource BoolToVis}}"
+
+                                                  Padding="4,2">
+
+                                        <ItemsControl ItemsSource="{Binding Node.Pins}">
+
+                                            <ItemsControl.ItemTemplate>
+
+                                                <DataTemplate>
+
+                                                    <Border BorderBrush="{DynamicResource IndustrialBorderSubtleBrush}" BorderThickness="0,0,0,1" Padding="0,3">
+
+                                                        <Grid>
+
+                                                            <Grid.ColumnDefinitions>
+
+                                                                <ColumnDefinition Width="*" MinWidth="90" />
+
+                                                                <ColumnDefinition Width="6" />
+
+                                                                <ColumnDefinition Width="150" />
+
+                                                                <ColumnDefinition Width="6" />
+
+                                                                <ColumnDefinition Width="46" />
+
+                                                                <ColumnDefinition Width="6" />
+
+                                                                <ColumnDefinition Width="105" />
+
+                                                                <ColumnDefinition Width="6" />
+
+                                                                <ColumnDefinition Width="120" />
+
+                                                                <ColumnDefinition Width="6" />
+
+                                                                <ColumnDefinition Width="46" />
+
+                                                                <ColumnDefinition Width="6" />
+
+                                                                <ColumnDefinition Width="28" />
+
+                                                            </Grid.ColumnDefinitions>
+
+
+
+                                                            <TextBox Grid.Column="0" Text="{Binding Label, UpdateSourceTrigger=PropertyChanged}" 
+
+                                                                     Height="25" Padding="6,2" FontSize="11" FontFamily="Consolas" VerticalContentAlignment="Center" 
+
+                                                                     Background="{DynamicResource BgPanelBrush}" BorderBrush="{DynamicResource IndustrialBorderSubtleBrush}" />
+
+                                                            <!-- Target Tag Selection -->
+                                                            <ComboBox Grid.Column="2" 
+                                                                      ToolTip="{Binding [ModbusColTargetTagTooltip], Source={x:Static services:LocalizationService.Instance}}"
+                                                                      ItemsSource="{Binding TagOptions}"
+                                                                      SelectedValue="{Binding TargetTag, Mode=TwoWay}"
+                                                                      SelectedValuePath="Tag"
+                                                                      Height="25" Padding="4,2" FontSize="10.5" VerticalContentAlignment="Center" BorderBrush="{DynamicResource IndustrialBorderSubtleBrush}">
+                                                                <ComboBox.ItemContainerStyle>
+                                                                    <Style TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
+                                                                        <Setter Property="IsEnabled" Value="{Binding IsSelectable}" />
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding IsSelectable}" Value="False">
+                                                                                <Setter Property="Opacity" Value="0.45" />
+                                                                                <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+                                                                                <Setter Property="Cursor" Value="No" />
+                                                                                <Setter Property="ToolTip" Value="{Binding ConflictTooltip}" />
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </ComboBox.ItemContainerStyle>
+                                                                <ComboBox.ItemTemplate>
+                                                                    <DataTemplate>
+                                                                        <DockPanel LastChildFill="True">
+                                                                            <TextBlock Visibility="{Binding HasConflict, Converter={StaticResource BoolToVis}}"
+                                                                                       Text="{Binding ConflictBadge}" FontSize="9.5" FontWeight="SemiBold"
+                                                                                       Foreground="{DynamicResource WarningBrush}" Margin="6,0,0,0" DockPanel.Dock="Right" VerticalAlignment="Center" />
+                                                                            <TextBlock Visibility="{Binding HasLinkBadge, Converter={StaticResource BoolToVis}}"
+                                                                                       Text="{Binding LinkedBadge}" FontSize="9.5" FontWeight="SemiBold"
+                                                                                       Foreground="{DynamicResource PrimaryBrush}" Margin="6,0,0,0" DockPanel.Dock="Right" VerticalAlignment="Center" />
+                                                                            <TextBlock Text="{Binding DisplayText}" VerticalAlignment="Center" />
+                                                                        </DockPanel>
+                                                                    </DataTemplate>
+                                                                </ComboBox.ItemTemplate>
+                                                            </ComboBox>
+
+                                                            <TextBox Grid.Column="4" Text="{Binding RegOffset, UpdateSourceTrigger=PropertyChanged}" 
+
+                                                                     Height="25" Padding="2,2" FontSize="11" FontFamily="Consolas" TextAlignment="Center" VerticalContentAlignment="Center" 
+
+                                                                     Background="{DynamicResource BgPanelBrush}" BorderBrush="{DynamicResource IndustrialBorderSubtleBrush}" />
+
+                                                            <!-- Data Type (Auto-Badge from Target Tag, click to toggle 16-bit/32-bit when applicable) -->
+                                                            <Border Grid.Column="6" 
+                                                                    Background="{DynamicResource BgSubtleBrush}" 
+                                                                    BorderBrush="{DynamicResource IndustrialBorderSubtleBrush}" 
+                                                                    BorderThickness="1" CornerRadius="2" Height="25" Padding="4,2" 
+                                                                    VerticalAlignment="Center" HorizontalAlignment="Stretch"
+                                                                    ToolTip="{Binding DataTypeTooltip}">
+                                                                <Border.InputBindings>
+                                                                    <MouseBinding Gesture="LeftClick" Command="{Binding ToggleRegisterWidthCommand}" />
+                                                                </Border.InputBindings>
+                                                                <Border.Style>
+                                                                    <Style TargetType="Border">
+                                                                        <Setter Property="Cursor" Value="Arrow" />
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding CanToggleRegisterWidth}" Value="True">
+                                                                                <Setter Property="Cursor" Value="Hand" />
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </Border.Style>
+                                                                <TextBlock Text="{Binding DataTypeText}" 
+                                                                           FontSize="10.5" FontWeight="SemiBold" 
+                                                                           Foreground="{DynamicResource TextSecondaryBrush}" 
+                                                                           HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center" />
+                                                            </Border>
+
+                                                            <!-- Endianness -->
+                                                            <Grid Grid.Column="8">
+                                                                <ComboBox ItemsSource="{Binding EndiannessOptions}" 
+                                                                          SelectedValue="{Binding Endianness}" SelectedValuePath="Value" DisplayMemberPath="DisplayName" 
+                                                                          Height="25" Padding="4,2" FontSize="10.5" VerticalContentAlignment="Center" BorderBrush="{DynamicResource IndustrialBorderSubtleBrush}"
+                                                                          Visibility="{Binding IsEndiannessEnabled, Converter={StaticResource BoolToVis}}" />
+
+                                                                <Border Background="{DynamicResource BgSubtleBrush}" 
+                                                                        BorderBrush="{DynamicResource IndustrialBorderSubtleBrush}" 
+                                                                        BorderThickness="1" CornerRadius="4" Height="25" Padding="4,2" 
+                                                                        VerticalAlignment="Center" HorizontalAlignment="Stretch"
+                                                                        Visibility="{Binding IsEndiannessEnabled, Converter={StaticResource InverseBoolToVis}}">
+                                                                    <TextBlock Text="—" 
+                                                                               FontSize="10.5" FontWeight="SemiBold" 
+                                                                               Foreground="{DynamicResource TextMutedBrush}" 
+                                                                               HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center" />
+                                                                </Border>
+                                                            </Grid>
+
+                                                            <!-- Scale/Multiplier -->
+                                                            <Grid Grid.Column="10">
+                                                                <TextBox Text="{Binding Multiplier, UpdateSourceTrigger=PropertyChanged}" 
+                                                                         Height="25" Padding="2,2" FontSize="11" FontFamily="Consolas" TextAlignment="Center" VerticalContentAlignment="Center" 
+                                                                         Background="{DynamicResource BgPanelBrush}" BorderBrush="{DynamicResource IndustrialBorderSubtleBrush}"
+                                                                         Visibility="{Binding IsMultiplierEnabled, Converter={StaticResource BoolToVis}}" />
+
+                                                                <Border Background="{DynamicResource BgSubtleBrush}" 
+                                                                        BorderBrush="{DynamicResource IndustrialBorderSubtleBrush}" 
+                                                                        BorderThickness="1" CornerRadius="4" Height="25" Padding="4,2" 
+                                                                        VerticalAlignment="Center" HorizontalAlignment="Stretch"
+                                                                        Visibility="{Binding IsMultiplierEnabled, Converter={StaticResource InverseBoolToVis}}">
+                                                                    <TextBlock Text="—" 
+                                                                               FontSize="10.5" FontWeight="SemiBold" 
+                                                                               Foreground="{DynamicResource TextMutedBrush}" 
+                                                                               HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center" />
+                                                                </Border>
+                                                            </Grid>
+
+                                                            <Button Grid.Column="12"
+
+                                                                     Style="{StaticResource TableRowDeleteBtnStyle}"
+
+                                                                     Command="{Binding DataContext.RemovePinCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+
+                                                                     CommandParameter="{Binding}" />
+
+                                                        </Grid>
+
+                                                    </Border>
+
+                                                </DataTemplate>
+
+                                            </ItemsControl.ItemTemplate>
+
+                                        </ItemsControl>
+
+                                    </ScrollViewer>
+
+                                </Grid>
+
+                            </Border>
+
+
+
+                            <!-- Add Pin & Import Action Buttons -->
+
+                            <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,8,0,0">
+
+                                <Button Content="{Binding [ModbusWriteBtnAddPin], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                        Command="{Binding AddPinCommand}"
+
+                                        IsEnabled="{Binding CanAddPin}"
+
+                                        ToolTip="{Binding AddPinTooltip}"
+
+                                        Style="{StaticResource TiaTactileBtnStyle}"
+
+                                        FontSize="11" Height="28" Padding="14,4" Margin="0,0,8,0" />
+
+                                <Button Content="{Binding ImportSystemChannelsText}" 
+
+                                        ToolTip="{Binding [ModbusBtnImportFromSystemTooltip], Source={x:Static services:LocalizationService.Instance}}"
+
+                                        Command="{Binding ImportSystemChannelsCommand}"
+
+                                        Visibility="{Binding CanImportSystemChannels, Converter={StaticResource BoolToVis}}"
+
+                                        Style="{StaticResource TiaTactileBtnStyle}"
+
+                                        Background="{DynamicResource IndustrialSurfaceInsetBrush}"
+
+                                        BorderBrush="{DynamicResource PrimaryBrush}"
+
+                                        FontSize="11" Height="28" Padding="12,4" />
+
+                            </StackPanel>
+
+                        </Grid>
+
+                    </Grid>
+
+                </Border>
+
+
+
+                <!-- RIGHT PANE: LIVE HEX TEST & ANALYSIS -->
+
+                <Border Grid.Column="2" Background="{DynamicResource BgPanelBrush}" BorderBrush="{DynamicResource IndustrialBorderSubtleBrush}" BorderThickness="1" CornerRadius="2" Padding="14">
+
+                    <Grid>
+
+                        <Grid.RowDefinitions>
+
+                            <RowDefinition Height="Auto" />
+
+                            <RowDefinition Height="Auto" />
+
+                            <RowDefinition Height="*" />
+
+                        </Grid.RowDefinitions>
+
+
+
+                        <!-- Header -->
+
+                        <StackPanel Grid.Row="0" Margin="0,0,0,10">
+
+                            <TextBlock Text="{Binding [ModbusWriteTestSection], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                       FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" FontSize="11" />
+
+                            <TextBlock Text="{Binding [ModbusWriteTestSectionDesc], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                       FontSize="10.5" Foreground="{DynamicResource TextMutedBrush}" Margin="0,2,0,0" />
+
+                        </StackPanel>
+
+
+
+                        <!-- Interactive Test Input Card -->
+
+                        <Border Grid.Row="1" Background="{DynamicResource BgWindowBrush}" BorderBrush="{DynamicResource IndustrialBorderDefaultBrush}" BorderThickness="1" CornerRadius="2" Padding="10,8" Margin="0,0,0,8">
+
+                            <StackPanel>
+
+                                <!-- A. Channel-Indexed Test Inputs -->
+
+                                <Grid Visibility="{Binding IsChannelIndexedMode, Converter={StaticResource BoolToVis}}">
+
+                                    <Grid.RowDefinitions>
+
+                                        <RowDefinition Height="Auto" />
+
+                                        <RowDefinition Height="6" />
+
+                                        <RowDefinition Height="Auto" />
+
+                                    </Grid.RowDefinitions>
+
+
+
+                                    <!-- Row 0: Test Channel & Command -->
+
+                                    <Grid Grid.Row="0">
+
+                                        <Grid.ColumnDefinitions>
+
+                                            <ColumnDefinition Width="*" />
+
+                                            <ColumnDefinition Width="8" />
+
+                                            <ColumnDefinition Width="*" />
+
+                                        </Grid.ColumnDefinitions>
+
+                                        <StackPanel Grid.Column="0" ToolTip="{Binding [ModbusWriteSimChTooltip], Source={x:Static services:LocalizationService.Instance}}">
+
+                                            <TextBlock Text="{Binding [ModbusWriteSimChLabel], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                                       FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,3" />
+
+                                            <TextBox Text="{Binding SimChannel, UpdateSourceTrigger=PropertyChanged}" 
+
+                                                     Height="26" Padding="4,2" FontSize="11" FontFamily="Consolas" TextAlignment="Center" 
+
+                                                     Background="{DynamicResource BgPanelBrush}" BorderBrush="{DynamicResource IndustrialBorderDefaultBrush}" VerticalContentAlignment="Center" />
+
+                                        </StackPanel>
+
+                                        <StackPanel Grid.Column="2" ToolTip="{Binding [ModbusWriteSimCmdTooltip], Source={x:Static services:LocalizationService.Instance}}">
+
+                                            <TextBlock Text="{Binding [ModbusWriteSimCmdLabel], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                                       FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,3" />
+
+                                            <TextBox Text="{Binding SimCommand, UpdateSourceTrigger=PropertyChanged}" 
+
+                                                     Height="26" Padding="4,2" FontSize="11" FontFamily="Consolas" TextAlignment="Center" 
+
+                                                     Background="{DynamicResource BgPanelBrush}" BorderBrush="{DynamicResource IndustrialBorderDefaultBrush}" VerticalContentAlignment="Center" />
+
+                                        </StackPanel>
+
+                                    </Grid>
+
+
+
+                                    <!-- Row 2: Test Param Hex (RGB color) -->
+
+                                    <StackPanel Grid.Row="2" ToolTip="{Binding [ModbusWriteSimParamTooltip], Source={x:Static services:LocalizationService.Instance}}">
+
+                                        <TextBlock Text="{Binding [ModbusWriteSimParamLabel], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                                   FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,3" />
+
+                                        <TextBox Text="{Binding SimParamHex, UpdateSourceTrigger=PropertyChanged}" 
+
+                                                 Height="26" Padding="4,2" FontSize="11" FontFamily="Consolas" 
+
+                                                 Background="{DynamicResource BgPanelBrush}" BorderBrush="{DynamicResource IndustrialBorderDefaultBrush}" VerticalContentAlignment="Center" />
+
+                                    </StackPanel>
+
+                                </Grid>
+
+
+
+                                <!-- B. Direct Registers Test Inputs -->
+
+                                <Grid Visibility="{Binding IsDirectRegistersMode, Converter={StaticResource BoolToVis}}">
+
+                                    <Grid.RowDefinitions>
+
+                                        <RowDefinition Height="Auto" />
+
+                                        <RowDefinition Height="6" />
+
+                                        <RowDefinition Height="Auto" />
+
+                                    </Grid.RowDefinitions>
+
+
+
+                                    <Grid Grid.Row="0">
+
+                                        <Grid.ColumnDefinitions>
+
+                                            <ColumnDefinition Width="*" />
+
+                                            <ColumnDefinition Width="8" />
+
+                                            <ColumnDefinition Width="100" />
+
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- Test Value -->
+
+                                        <StackPanel Grid.Column="0" ToolTip="{Binding [ModbusWriteSimDirectValTooltip], Source={x:Static services:LocalizationService.Instance}}">
+
+                                            <TextBlock Text="{Binding [ModbusWriteSimDirectValLabel], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                                       FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,3" />
+
+                                            <TextBox Text="{Binding SimDirectValue, UpdateSourceTrigger=PropertyChanged}" 
+
+                                                     Height="26" Padding="4,2" FontSize="11" FontFamily="Consolas" TextAlignment="Center" 
+
+                                                     Background="{DynamicResource BgPanelBrush}" BorderBrush="{DynamicResource IndustrialBorderDefaultBrush}" VerticalContentAlignment="Center" />
+
+                                        </StackPanel>
+
+                                        <!-- Start Address -->
+
+                                        <StackPanel Grid.Column="2" ToolTip="{Binding [ModbusWriteColStartAddrTooltip], Source={x:Static services:LocalizationService.Instance}}">
+
+                                            <TextBlock Text="{Binding [ModbusWriteColStartAddr], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                                       FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,3" />
+
+                                            <Border Background="{DynamicResource BgPanelBrush}" BorderBrush="{DynamicResource IndustrialBorderDefaultBrush}" BorderThickness="1" Height="26" CornerRadius="1">
+
+                                                <TextBlock Text="{Binding StartAddress, StringFormat={}0x{0:X4}}" 
+
+                                                           FontFamily="Consolas" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource IndustrialPrimaryBrush}" 
+
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+
+                                            </Border>
+
+                                        </StackPanel>
+
+                                    </Grid>
+
+
+
+                                    <TextBlock Grid.Row="2" Text="{Binding NodeInfoSummary}" FontSize="10.5" FontFamily="Consolas" Foreground="{DynamicResource TextMutedBrush}" HorizontalAlignment="Center" />
+
+                                </Grid>
+
+
+
+                                <!-- Action Button -->
+
+                                <Button Content="{Binding [ModbusWriteBtnRunTest], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                        Command="{Binding GenerateFramePreviewCommand}"
+
+                                        ToolTip="{Binding [ModbusWriteSimBtnTooltip], Source={x:Static services:LocalizationService.Instance}}"
+
+                                        Style="{StaticResource BtnPrimary}"
+
+                                        Height="28" FontSize="11" Padding="12,4" HorizontalAlignment="Stretch" Margin="0,8,0,0" />
+
+                            </StackPanel>
+
+                        </Border>
+
+
+
+                        <!-- Decoded Results Container (Symmetric, Ergonomic Layout) -->
+
+                        <Border Grid.Row="2" Background="{DynamicResource BgWindowBrush}" BorderBrush="{DynamicResource IndustrialBorderSubtleBrush}" BorderThickness="1" CornerRadius="2" Padding="8">
+
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0">
+
+                                <StackPanel Margin="4,0,4,0">
+
+                                    <!-- Status Banner (ISA-101 / TIA Portal Diagnostic Box) -->
+
+                                    <Border Background="{DynamicResource BgSubtleBrush}" BorderBrush="{DynamicResource IndustrialBorderDefaultBrush}" BorderThickness="1" CornerRadius="2" Padding="7,5" Margin="0,0,0,6">
+
+                                        <DockPanel LastChildFill="True">
+
+                                            <Border Width="3" Background="{DynamicResource SuccessBrush}" CornerRadius="1" Margin="0,0,7,0" DockPanel.Dock="Left" />
+
+                                            <TextBlock Text="{Binding SimStatusMessage}" FontWeight="SemiBold" FontSize="10.5" Foreground="{DynamicResource TextPrimaryBrush}" FontFamily="Segoe UI" TextWrapping="Wrap" VerticalAlignment="Center" />
+
+                                        </DockPanel>
+
+                                    </Border>
+
+
+
+                                    <!-- Transmitted TX Frame -->
+
+                                    <TextBlock Text="{Binding [ModbusWriteTxFrameLabel], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                               FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,3" />
+
+
+
+                                    <Border Background="{DynamicResource BgPanelBrush}" BorderBrush="{DynamicResource IndustrialBorderDefaultBrush}" BorderThickness="1" CornerRadius="2" Padding="6,4" Margin="0,0,0,4"
+
+                                            ToolTip="{Binding [ModbusWriteTxFrameTooltip], Source={x:Static services:LocalizationService.Instance}}">
+
+                                        <TextBlock Text="{Binding SimTxFrameHex}" FontFamily="Consolas" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" TextWrapping="Wrap" />
+
+                                    </Border>
+
+
+
+                                    <!-- Optional Param Frame -->
+
+                                    <StackPanel Visibility="{Binding HasParamFrame, Converter={StaticResource BoolToVis}}" Margin="0,0,0,4">
+
+                                        <TextBlock Text="{Binding [ModbusWriteTxParamLabel], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                                   FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource TextMutedBrush}" Margin="0,2,0,2" />
+
+                                        <Border Background="{DynamicResource BgPanelBrush}" BorderBrush="{DynamicResource IndustrialBorderDefaultBrush}" BorderThickness="1" CornerRadius="2" Padding="6,4">
+
+                                            <TextBlock Text="{Binding SimParamTxFrameHex}" FontFamily="Consolas" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource IndustrialPrimaryBrush}" TextWrapping="Wrap" />
+
+                                        </Border>
+
+                                    </StackPanel>
+
+
+
+                                    <!-- Frame Structure Breakdown -->
+
+                                    <TextBlock Text="{Binding [ModbusWriteParseLabel], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                               FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,6,0,4" />
+
+
+
+                                    <ItemsControl ItemsSource="{Binding FrameBreakdownItems}">
+
+                                        <ItemsControl.ItemTemplate>
+
+                                            <DataTemplate>
+
+                                                <Border Background="{DynamicResource BgPanelBrush}" BorderBrush="{DynamicResource IndustrialBorderSubtleBrush}" BorderThickness="1" CornerRadius="2" Padding="6,3" Margin="0,0,0,3"
+
+                                                        ToolTip="{Binding Tooltip}">
+
+                                                    <DockPanel LastChildFill="True">
+
+                                                        <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" VerticalAlignment="Center">
+
+                                                            <TextBlock Text="{Binding FieldName}" FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" />
+
+                                                            <Border Background="{DynamicResource BgSubtleBrush}" BorderBrush="{DynamicResource IndustrialBorderDefaultBrush}" BorderThickness="1"
+
+                                                                    CornerRadius="2" Padding="4,1" Margin="6,0,6,0" VerticalAlignment="Center">
+
+                                                                 <TextBlock Text="{Binding RawHex}" FontFamily="Consolas" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource IndustrialPrimaryBrush}" />
+
+                                                            </Border>
+
+                                                            <Path Style="{StaticResource IecStatusIconStyle}" Data="{StaticResource IconSysArrowRight}" Stroke="{DynamicResource TextMutedBrush}" Width="9" Height="9" Margin="0,0,4,0" VerticalAlignment="Center" />
+
+                                                        </StackPanel>
+
+                                                        <TextBlock Text="{Binding Interpretation}" 
+
+                                                                   FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+
+                                                    </DockPanel>
+
+                                                </Border>
+
+                                            </DataTemplate>
+
+                                        </ItemsControl.ItemTemplate>
+
+                                    </ItemsControl>
+
+                                </StackPanel>
+
+                            </ScrollViewer>
+
+                        </Border>
+
+                    </Grid>
+
+                </Border>
+
+            </Grid>
+
+
+
+            <!-- 2. Footer Action -->
+
+            <Border Grid.Row="2" BorderBrush="{DynamicResource IndustrialBorderSubtleBrush}" BorderThickness="0,1,0,0" Padding="0,10,0,0">
+
+                <DockPanel LastChildFill="False">
+
+                    <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" VerticalAlignment="Center">
+
+                        <TextBlock Text="{Binding [ModbusTargetMaster], Source={x:Static services:LocalizationService.Instance}}" 
+
+                                   FontSize="11" Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,6,0" />
+
+                        <TextBlock Text="{Binding SummaryBadgeText}" 
+
+                                   FontSize="11" FontWeight="Bold" FontFamily="Consolas" Foreground="{DynamicResource TextSecondaryBrush}" />
+
+                    </StackPanel>
+
+
+
+                    <Button Content="{Binding [ModbusWriteBtnApply], Source={x:Static services:LocalizationService.Instance}}" 
+
+                            DockPanel.Dock="Right" Click="Apply_Click"
+
+                            Style="{StaticResource BtnPrimary}"
+
+                            FontSize="11.5" Height="28" Padding="20,4" Margin="8,0,0,0" />
+
+                    <Button Content="{Binding [BtnCancel], Source={x:Static services:LocalizationService.Instance}}" 
+
+                            DockPanel.Dock="Right" Click="Cancel_Click"
+
+                            Style="{StaticResource TiaTactileBtnStyle}"
+
+                            FontSize="11.5" Height="28" Padding="16,4" />
+
+                </DockPanel>
+
+            </Border>
+
+        </Grid>
+
+    </Border>
+
+</Window>
+

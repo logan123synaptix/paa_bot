@@ -1,0 +1,567 @@
+using System;
+using System.Globalization;
+using SimplePLC.Protocol.Enums;
+using SimplePLC.Studio.ViewModels;
+using Xunit;
+
+namespace SimplePLC.Studio.Tests;
+
+/// <summary>
+/// Unit tests cho <see cref="ModbusReadConfigDialogViewModel"/> kiểm thử cấu hình kênh đọc Modbus Master,
+/// tính toán số thanh ghi, lọc Tag theo loại dữ liệu và chuyển đổi ngôn ngữ.
+/// </summary>
+public class ModbusReadConfigDialogViewModelTests
+{
+    [Fact]
+    public void Constructor_InitializesValuesFromNode_AndComputesInitialRegCount()
+    {
+        var node = new ModbusReadNodeViewModel
+        {
+            SlaveId = 2,
+            FunctionCode = ModbusMasterFunctionCode.ReadInputRegisters,
+            StartAddress = 50,
+            RegCount = 1,
+            PollIntervalMs = 250,
+            TimeoutMs = 800
+        };
+
+        var pin1 = new ModbusPinBindingViewModel
+        {
+            Label = "Pressure",
+            RegOffset = 0,
+            DataType = ModbusDataType.Int16
+        };
+        var pin2 = new ModbusPinBindingViewModel
+        {
+            Label = "FlowRate",
+            RegOffset = 1,
+            DataType = ModbusDataType.Real // occupies 2 registers: offset 1 and 2 -> needs 3 registers total
+        };
+
+        node.Pins.Add(pin1);
+        node.Pins.Add(pin2);
+
+        var vm = new ModbusReadConfigDialogViewModel(node, new TagCatalogViewModel());
+
+        Assert.Equal(2, vm.SlaveId);
+        Assert.Equal(ModbusMasterFunctionCode.ReadInputRegisters, vm.FunctionCode);
+        Assert.Equal(50, vm.StartAddress);
+        // RegCount should auto-bump to 3 because pin2 (Real at offset 1) needs 1 + 2 = 3 registers
+        Assert.Equal((ushort)3, vm.RegCount);
+        Assert.Equal(250u, vm.PollIntervalMs);
+        Assert.Equal(800u, vm.TimeoutMs);
+        Assert.True(vm.HasPins);
+        Assert.False(vm.HasNoPins);
+    }
+
+    [Fact]
+    public void ChangingPinOffsetOrDataType_AutoUpdatesRegCount_WhenPinsRequireMore()
+    {
+        var node = new ModbusReadNodeViewModel { RegCount = 2 };
+        var pin = new ModbusPinBindingViewModel
+        {
+            Label = "Temp",
+            RegOffset = 0,
+            DataType = ModbusDataType.Int16
+        };
+        node.Pins.Add(pin);
+
+        var vm = new ModbusReadConfigDialogViewModel(node, new TagCatalogViewModel());
+        Assert.Equal((ushort)2, vm.RegCount);
+
+        // Change pin offset to 4 (Int16 needs 1 register, so offset 4 ends at 5)
+        pin.RegOffset = 4;
+        Assert.Equal((ushort)5, vm.RegCount);
+
+        // Change datatype to Real (needs 2 registers, so offset 4 ends at 6)
+        pin.DataType = ModbusDataType.Real;
+        Assert.Equal((ushort)6, vm.RegCount);
+    }
+
+    [Fact]
+    public void AddPin_IncrementsOffsetAndAttachesPropertyListener()
+    {
+        var node = new ModbusReadNodeViewModel();
+        var vm = new ModbusReadConfigDialogViewModel(node, new TagCatalogViewModel());
+
+        Assert.Empty(node.Pins);
+
+        // Add 1st pin -> Offset 0, Int16 (span 1)
+        vm.AddPin();
+        Assert.Single(node.Pins);
+        Assert.Equal((ushort)0, node.Pins[0].RegOffset);
+        Assert.Equal("Pin_1", node.Pins[0].Label);
+
+        // Change 1st pin to Real (span 2)
+        node.Pins[0].DataType = ModbusDataType.Real;
+
+        // Add 2nd pin -> Next offset should be 0 + 2 = 2
+        vm.AddPin();
+        Assert.Equal(2, node.Pins.Count);
+        Assert.Equal((ushort)2, node.Pins[1].RegOffset);
+        Assert.Equal("Pin_2", node.Pins[1].Label);
+
+        // Changing the newly added pin's offset should trigger RegCount update
+        node.Pins[1].RegOffset = 8;
+        Assert.True(vm.RegCount >= 9);
+    }
+
+    [Fact]
+    public void RemovePin_DetachesPinAndKeepsRemainingPins()
+    {
+        var node = new ModbusReadNodeViewModel();
+        var vm = new ModbusReadConfigDialogViewModel(node, new TagCatalogViewModel());
+
+        vm.AddPin();
+        vm.AddPin();
+        Assert.Equal(2, node.Pins.Count);
+
+        var pinToRemove = node.Pins[0];
+        vm.RemovePin(pinToRemove);
+
+        Assert.Single(node.Pins);
+        Assert.DoesNotContain(pinToRemove, node.Pins);
+    }
+
+    [Fact]
+    public void RunSimulationTest_WithNoPins_FailsGracefully()
+    {
+        var node = new ModbusReadNodeViewModel();
+        var vm = new ModbusReadConfigDialogViewModel(node, new TagCatalogViewModel());
+
+        vm.SimulationHexInput = "01 03 02 00 64 B9 AF";
+        vm.RunSimulationTest();
+
+        Assert.True(vm.HasRunSimulation);
+        Assert.False(vm.IsSimulationSuccess);
+        Assert.False(string.IsNullOrWhiteSpace(vm.SimulationStatusMessage));
+    }
+
+    [Fact]
+    public void RunSimulationTest_WithInvalidHex_FailsGracefully()
+    {
+        var node = new ModbusReadNodeViewModel();
+        node.Pins.Add(new ModbusPinBindingViewModel { Label = "Pin1", RegOffset = 0 });
+
+        var vm = new ModbusReadConfigDialogViewModel(node, new TagCatalogViewModel());
+        vm.SimulationHexInput = "ZZ Top Invalid";
+        vm.RunSimulationTest();
+
+        Assert.True(vm.HasRunSimulation);
+        Assert.False(vm.IsSimulationSuccess);
+        Assert.Contains("invalid", vm.SimulationStatusMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void RunSimulationTest_WithValidModbusResponse_DecodesPinsAndSucceeds()
+    {
+        var node = new ModbusReadNodeViewModel();
+        var pin1 = new ModbusPinBindingViewModel
+        {
+            Label = "Temperature",
+            RegOffset = 0,
+            DataType = ModbusDataType.Int16,
+            Multiplier = 0.1f
+        };
+        var pin2 = new ModbusPinBindingViewModel
+        {
+            Label = "Pressure",
+            RegOffset = 1,
+            DataType = ModbusDataType.UInt16,
+            Multiplier = 1.0f
+        };
+        node.Pins.Add(pin1);
+        node.Pins.Add(pin2);
+
+        var vm = new ModbusReadConfigDialogViewModel(node, new TagCatalogViewModel());
+
+        // Frame: Slave 01, FC 03, ByteCount 04, Reg0=0x00FA (250 -> 25.0), Reg1=0x03E8 (1000), CRC
+        // CRC for 01 03 04 00 FA 03 E8:
+        // Or we can provide register payload: "00 FA 03 E8"
+        vm.SimulationHexInput = "00 FA 03 E8";
+        vm.RunSimulationTest();
+
+        Assert.True(vm.HasRunSimulation);
+        Assert.True(vm.IsSimulationSuccess);
+        Assert.Contains("CRC OK", vm.SimulationStatusMessage);
+        Assert.Equal(25.0, pin1.CurrentValue);
+        Assert.Equal(1000.0, pin2.CurrentValue);
+    }
+
+    [Fact]
+    public void ResetSampleHex_SetsStandardSampleFrame()
+    {
+        var node = new ModbusReadNodeViewModel();
+        var vm = new ModbusReadConfigDialogViewModel(node, new TagCatalogViewModel());
+
+        vm.ResetSampleHex();
+
+        Assert.False(string.IsNullOrWhiteSpace(vm.SimulationHexInput));
+        Assert.Contains("01 03", vm.SimulationHexInput);
+        Assert.False(vm.HasRunSimulation);
+    }
+
+    [Fact]
+    public void Apply_CommitsPropertiesBackToNode()
+    {
+        var node = new ModbusReadNodeViewModel
+        {
+            SlaveId = 1,
+            StartAddress = 0,
+            RegCount = 1,
+            PollIntervalMs = 500,
+            TimeoutMs = 1000
+        };
+
+        var vm = new ModbusReadConfigDialogViewModel(node, new TagCatalogViewModel())
+        {
+            SlaveId = 10,
+            FunctionCode = ModbusMasterFunctionCode.ReadHoldingRegisters,
+            StartAddress = 200,
+            RegCount = 8,
+            PollIntervalMs = 100,
+            TimeoutMs = 500
+        };
+
+        vm.Apply();
+
+        Assert.Equal((byte)10, node.SlaveId);
+        Assert.Equal(ModbusMasterFunctionCode.ReadHoldingRegisters, node.FunctionCode);
+        Assert.Equal((ushort)200, node.StartAddress);
+        Assert.Equal((ushort)8, node.RegCount);
+        Assert.Equal(100u, node.PollIntervalMs);
+        Assert.Equal(500u, node.TimeoutMs);
+    }
+
+    [Theory]
+    [InlineData("vi")]
+    [InlineData("en")]
+    public void ModbusRead_BilingualTooltips_AreFullyLocalized(string culture)
+    {
+        var originalLang = Services.LocalizationService.Instance.CurrentLanguage;
+        try
+        {
+            Services.LocalizationService.Instance.CurrentLanguage = culture;
+
+            var keys = new[]
+            {
+                "ModbusReadColSlaveTooltip",
+                "ModbusReadColFcTooltip",
+                "ModbusReadColStartAddrTooltip",
+                "ModbusReadColQuantityTooltip",
+                "ModbusReadColModeTooltip",
+                "ModbusReadColPollIntervalTooltip",
+                "ModbusReadColTimeoutTooltip",
+                "ModbusReadPinNameTooltip",
+                "ModbusReadPinOffsetTooltip",
+                "ModbusReadPinTypeTooltip",
+                "ModbusReadPinEndianTooltip",
+                "ModbusReadPinScaleTooltip",
+                "ModbusReadPinDeleteTooltip",
+                "ModbusReadBtnAddPinTooltip",
+                "ModbusReadBtnSampleFrameTooltip",
+                "ModbusReadHexInputTooltip",
+                "ModbusReadBtnRunTestTooltip",
+                "ModbusReadResultsPreviewTooltip",
+                "ModbusReadBtnApplyTooltip",
+                "ModbusReadBtnCancelTooltip",
+                "InspectorModbusReadConfigureTooltip"
+            };
+
+            foreach (var key in keys)
+            {
+                var text = Services.LocalizationService.Tr(key);
+                Assert.False(string.IsNullOrWhiteSpace(text), $"Key '{key}' must have non-empty translation for culture '{culture}'");
+                Assert.False(text.StartsWith("!"), $"Key '{key}' must not be missing in culture '{culture}'");
+            }
+        }
+        finally
+        {
+            Services.LocalizationService.Instance.CurrentLanguage = originalLang;
+        }
+    }
+
+    [Fact]
+    public void RefreshAvailablePorts_PreservesSelectedValues_AndDoesNotClearStaticDropdowns()
+    {
+        var node = new ModbusReadNodeViewModel
+        {
+            PortIndex = 1,
+            ReadMode = ModbusReadMode.OnTriggerRisingEdge,
+            FunctionCode = ModbusMasterFunctionCode.ReadInputRegisters
+        };
+
+        var initialPorts = new System.Collections.Generic.List<Models.ModbusPortConfigModel>
+        {
+            new() { PortIndex = 0, PortName = "Port 1", Enabled = true },
+            new() { PortIndex = 1, PortName = "Port 2", Enabled = true }
+        };
+
+        var vm = new ModbusReadConfigDialogViewModel(node, new TagCatalogViewModel(), initialPorts);
+
+        Assert.Equal(1, vm.PortIndex);
+        Assert.Equal(ModbusReadMode.OnTriggerRisingEdge, vm.ReadMode);
+        Assert.Equal(ModbusMasterFunctionCode.ReadInputRegisters, vm.FunctionCode);
+        Assert.Equal(2, vm.AvailablePorts.Count);
+        Assert.Equal(2, vm.AvailableReadModes.Count);
+        Assert.Equal(4, vm.AvailableFunctionCodes.Count);
+
+        // Simulate returning from RS-485 port settings dialog with updated baud/settings
+        var updatedPorts = new System.Collections.Generic.List<Models.ModbusPortConfigModel>
+        {
+            new() { PortIndex = 0, PortName = "Port 1 (RS485-A)", BaudRate = 9600, Enabled = true },
+            new() { PortIndex = 1, PortName = "Port 2 (RS485-B)", BaudRate = 115200, Enabled = true },
+            new() { PortIndex = 2, PortName = "Port 3", BaudRate = 19200, Enabled = true }
+        };
+
+        vm.RefreshAvailablePorts(updatedPorts);
+
+        // Core properties must remain exactly intact
+        Assert.Equal(1, vm.PortIndex);
+        Assert.Equal(ModbusReadMode.OnTriggerRisingEdge, vm.ReadMode);
+        Assert.Equal(ModbusMasterFunctionCode.ReadInputRegisters, vm.FunctionCode);
+
+        // Dropdown counts must be updated properly without being wiped
+        Assert.Equal(3, vm.AvailablePorts.Count);
+        Assert.Equal(2, vm.AvailableReadModes.Count);
+        Assert.Equal(4, vm.AvailableFunctionCodes.Count);
+        Assert.Contains(vm.AvailablePorts, p => p.Value == 1 && p.DisplayName.Contains("RS485-B"));
+    }
+
+    [Fact]
+    public void AvailableTags_ExposesTagCatalogTags_AndInitializesDefaultPinsToNone()
+    {
+        var node = new ModbusReadNodeViewModel();
+        var pin1 = new ModbusPinBindingViewModel { Label = "Pin_1", RegOffset = 0 };
+        node.Pins.Add(pin1);
+
+        var tagCatalog = new TagCatalogViewModel();
+        var vm = new ModbusReadConfigDialogViewModel(node, tagCatalog);
+
+        Assert.NotNull(vm.AvailableTags);
+        Assert.NotEmpty(vm.AvailableTags);
+        Assert.Same(tagCatalog.AllTags, vm.AvailableTags);
+
+        // pin1 should be defaulted to NONE tag
+        Assert.NotNull(pin1.TargetTag);
+        Assert.Equal(SimplePLC.Domain.Enums.TagKind.None, pin1.TargetTag.Kind);
+        Assert.Null(pin1.ToDto().TargetTagIndex);
+
+        // Adding a new pin should also default TargetTag to NONE
+        vm.AddPin();
+        Assert.Equal(2, node.Pins.Count);
+        var pin2 = node.Pins[1];
+        Assert.NotNull(pin2.TargetTag);
+        Assert.Equal(SimplePLC.Domain.Enums.TagKind.None, pin2.TargetTag.Kind);
+        Assert.Null(pin2.ToDto().TargetTagIndex);
+
+        // Select a real tag for pin1 (e.g. VREG0)
+        var vregTag = tagCatalog.AllTags.FirstOrDefault(t => t.Kind == SimplePLC.Domain.Enums.TagKind.VirtualRegister);
+        Assert.NotNull(vregTag);
+        pin1.TargetTag = vregTag;
+
+        Assert.Equal((ushort)vregTag.Index, pin1.ToDto().TargetTagIndex);
+    }
+
+    [Fact]
+    public void GetCompatibleTagsForDataType_ExcludesHardwareInputs()
+    {
+        var node = new ModbusReadNodeViewModel();
+        var tagCatalog = new TagCatalogViewModel();
+        var vm = new ModbusReadConfigDialogViewModel(node, tagCatalog);
+
+        var boolTags = vm.GetCompatibleTagsForDataType(ModbusDataType.Bool);
+        Assert.NotEmpty(boolTags);
+        Assert.All(boolTags, t =>
+        {
+            Assert.False(t.Kind == SimplePLC.Domain.Enums.TagKind.DiscreteInput, "DiscreteInput must NOT be a Modbus Read TargetTag");
+            Assert.False(t.Kind == SimplePLC.Domain.Enums.TagKind.AnalogInput, "AnalogInput must NOT be a Modbus Read TargetTag");
+            Assert.False(t.Kind == SimplePLC.Domain.Enums.TagKind.System, "System tag must NOT be a Modbus Read TargetTag");
+        });
+
+        var intTags = vm.GetCompatibleTagsForDataType(ModbusDataType.Int16);
+        Assert.NotEmpty(intTags);
+        Assert.All(intTags, t =>
+        {
+            Assert.False(t.Kind == SimplePLC.Domain.Enums.TagKind.DiscreteInput, "DiscreteInput must NOT be a Modbus Read TargetTag");
+            Assert.False(t.Kind == SimplePLC.Domain.Enums.TagKind.AnalogInput, "AnalogInput must NOT be a Modbus Read TargetTag");
+            Assert.False(t.Kind == SimplePLC.Domain.Enums.TagKind.System, "System tag must NOT be a Modbus Read TargetTag");
+        });
+    }
+
+    [Fact]
+    public void ModbusReadConfigDialogViewModel_WhenZigbeeEnabled_IncludesZigbeePortInDropdown()
+    {
+        // Arrange
+        var node = new ModbusReadNodeViewModel();
+        var tagCatalog = new TagCatalogViewModel();
+        var ports = new System.Collections.Generic.List<Models.ModbusPortConfigModel>
+        {
+            new() { PortIndex = 0, PortName = "Port 1", Enabled = true }
+        };
+        var zigbee = new Models.ZigbeeConfigModel
+        {
+            Enabled = true,
+            Channel = 15,
+            PanIdHex = "1A2B"
+        };
+
+        // Act
+        var vm = new ModbusReadConfigDialogViewModel(node, tagCatalog, ports, zigbee);
+
+        // Assert
+        Assert.Contains(vm.AvailablePorts, p => p.Value == 4 && p.DisplayName.Contains("Zigbee") && p.DisplayName.Contains("1A2B"));
+
+        // Select Zigbee port
+        vm.PortIndex = 4;
+        Assert.Contains("Zigbee", vm.PortSelectorTooltip);
+        Assert.Contains("Zigbee", vm.SummaryBadgeText);
+    }
+
+    [Theory]
+    [InlineData((byte)236)]
+    [InlineData((byte)237)]
+    public void ModbusReadConfigDialogViewModel_SafetyGate_WhenZigbeePortAndRestrictedId_SetsErrorFlagAndRevertsOnApply(byte restrictedId)
+    {
+        // Arrange
+        var node = new ModbusReadNodeViewModel();
+        var tagCatalog = new TagCatalogViewModel();
+        var zigbee = new Models.ZigbeeConfigModel { Enabled = true };
+        var vm = new ModbusReadConfigDialogViewModel(node, tagCatalog, null, zigbee);
+
+        // Act 1: Normal RS-485 port does not restrict 236/237
+        vm.PortIndex = 0;
+        vm.SlaveId = restrictedId;
+        Assert.False(vm.HasRestrictedIdError);
+
+        // Act 2: Zigbee port activates Safety Gate
+        vm.PortIndex = 4;
+        Assert.True(vm.HasRestrictedIdError);
+        Assert.False(string.IsNullOrWhiteSpace(vm.RestrictedIdErrorMessage));
+
+        // Act 3: Apply automatically prevents saving restricted ID to node
+        vm.Apply();
+        Assert.NotEqual(restrictedId, node.SlaveId);
+        Assert.Equal((byte)1, node.SlaveId);
+    }
+
+    [Fact]
+    public void ModbusRead_WhenFunctionCodeIsReadCoils_AddPinDefaultsToBool_AndShowsCoilTags()
+    {
+        var tagCatalog = new TagCatalogViewModel();
+        var node = new ModbusReadNodeViewModel
+        {
+            FunctionCode = ModbusMasterFunctionCode.ReadCoils
+        };
+        var dialog = new ModbusReadConfigDialogViewModel(node, tagCatalog);
+        dialog.AddPin();
+        var pin = node.Pins[0];
+
+        // Pin must default to Bool for FC01 Read Coils
+        Assert.Equal(ModbusDataType.Bool, pin.DataType);
+
+        var available = pin.AvailableTags.ToList();
+        Assert.Contains(available, t => t.Name == "VFLAG0");
+        Assert.Contains(available, t => t.Name == "DO0");
+        Assert.DoesNotContain(available, t => t.Name == "VREG0");
+    }
+
+    [Fact]
+    public void ModbusRead_WhenFunctionCodeIsHoldingRegisters_AllowsSelectingRealTag()
+    {
+        var tagCatalog = new TagCatalogViewModel();
+        var vr0 = tagCatalog.AllTags.First(t => t.Name == "VREG0");
+        vr0.DataType = SimplePLC.Domain.Enums.TagDataType.Float32;
+
+        var node = new ModbusReadNodeViewModel
+        {
+            FunctionCode = ModbusMasterFunctionCode.ReadHoldingRegisters
+        };
+        var dialog = new ModbusReadConfigDialogViewModel(node, tagCatalog);
+        dialog.AddPin();
+        var pin = node.Pins[0];
+
+        // Should default to Int16
+        Assert.Equal(ModbusDataType.Int16, pin.DataType);
+
+        var available = pin.AvailableTags.ToList();
+        Assert.Contains(available, t => t.Name == "VREG0");
+        Assert.DoesNotContain(available, t => t.Name == "VFLAG0");
+
+        // Selecting VREG0 (Float32) must auto-promote DataType to Real (span 2)
+        pin.TargetTag = vr0;
+        Assert.Equal(ModbusDataType.Real, pin.DataType);
+    }
+
+    [Fact]
+    public void ModbusRead_WhenSwitchingFromRegsToCoils_NormalizesPinsAndOffsets()
+    {
+        var tagCatalog = new TagCatalogViewModel();
+        var node = new ModbusReadNodeViewModel
+        {
+            FunctionCode = ModbusMasterFunctionCode.ReadHoldingRegisters
+        };
+        var dialog = new ModbusReadConfigDialogViewModel(node, tagCatalog);
+        dialog.AddPin(); // Pin 1
+        dialog.AddPin(); // Pin 2
+
+        Assert.Equal(2, node.Pins.Count);
+        Assert.Equal(ModbusDataType.Int16, node.Pins[0].DataType);
+
+        // Switch to FC01 Read Coils
+        dialog.FunctionCode = ModbusMasterFunctionCode.ReadCoils;
+
+        // All pins must be normalized to Bool with 1-bit offsets
+        Assert.Equal(ModbusDataType.Bool, node.Pins[0].DataType);
+        Assert.Equal(ModbusDataType.Bool, node.Pins[1].DataType);
+        Assert.Equal(0, node.Pins[0].RegOffset);
+        Assert.Equal(1, node.Pins[1].RegOffset);
+    }
+
+    [Fact]
+    public void ModbusPin_WhenDataTypeIsBool_DisablesEndiannessAndMultiplier()
+    {
+        var pin = new ModbusPinBindingViewModel
+        {
+            DataType = ModbusDataType.Int16,
+            Multiplier = 2.5f
+        };
+        Assert.True(pin.IsEndiannessEnabled);
+        Assert.True(pin.IsMultiplierEnabled);
+
+        // Switch to Bool
+        pin.DataType = ModbusDataType.Bool;
+        Assert.False(pin.IsEndiannessEnabled);
+        Assert.False(pin.IsMultiplierEnabled);
+        Assert.Equal(ModbusEndianness.BigEndian_ABCD, pin.Endianness);
+        Assert.Equal(1.0f, pin.Multiplier);
+    }
+
+    [Fact]
+    public void ModbusRead_WhenPinRemoved_RefreshesPeerPinTagOptions()
+    {
+        var tagCatalog = new TagCatalogViewModel();
+        var node = new ModbusReadNodeViewModel
+        {
+            FunctionCode = ModbusMasterFunctionCode.ReadCoils
+        };
+        var dialog = new ModbusReadConfigDialogViewModel(node, tagCatalog);
+        dialog.AddPin(); // Pin 1
+        dialog.AddPin(); // Pin 2
+
+        var pin1 = node.Pins[0];
+        var pin2 = node.Pins[1];
+
+        var do0 = tagCatalog.AllTags.First(t => t.Name == "DO0");
+        pin1.TargetTag = do0;
+
+        // In pin 2, DO0 should be locked / not selectable due to intra-block collision
+        var pin2OptionDo0 = pin2.TagOptions.First(o => o.Tag.Name == "DO0");
+        Assert.False(pin2OptionDo0.IsSelectable);
+
+        // Remove pin 1 -> pin 2 must be refreshed and DO0 becomes selectable again
+        dialog.RemovePin(pin1);
+        pin2OptionDo0 = pin2.TagOptions.First(o => o.Tag.Name == "DO0");
+        Assert.True(pin2OptionDo0.IsSelectable);
+    }
+}

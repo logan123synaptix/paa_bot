@@ -1,0 +1,551 @@
+using System.ComponentModel;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using SimplePLC.Application.Enums;
+using SimplePLC.Application.Models;
+using SimplePLC.Domain.Enums;
+using SimplePLC.Studio.Models;
+using SimplePLC.Studio.Services;
+
+namespace SimplePLC.Studio.ViewModels;
+
+/// <summary>
+/// ViewModel cho khối đồ họa Xử lý Tín hiệu Tương tự SCALE (Analog Linear Scaler / Amplifier).
+/// Thực thi mô hình tuyến tính công nghiệp chuẩn: y = Gain * x + Offset.
+/// Hỗ trợ Clamping an toàn và công cụ tính nhanh Gain & Offset từ 2 điểm hiệu chuẩn thực tế.
+/// </summary>
+public partial class ScaleNodeViewModel : GraphNodeViewModel, ILiveTagBoundNode
+{
+    public ushort? BoundTagIndex => (InputTag != null && InputTag.Kind != TagKind.None && InputTag.Index < 65535) ? (ushort)InputTag.Index : null;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SummaryText))]
+    [NotifyPropertyChangedFor(nameof(NarrativeText))]
+    [NotifyPropertyChangedFor(nameof(FormulaExpression))]
+    [NotifyPropertyChangedFor(nameof(LiveFormattedValue))]
+    [NotifyPropertyChangedFor(nameof(SimulationProgressText))]
+    [NotifyPropertyChangedFor(nameof(ScaleStatusPillText))]
+    private double _gain = 0.01;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SummaryText))]
+    [NotifyPropertyChangedFor(nameof(NarrativeText))]
+    [NotifyPropertyChangedFor(nameof(FormulaExpression))]
+    [NotifyPropertyChangedFor(nameof(LiveFormattedValue))]
+    [NotifyPropertyChangedFor(nameof(SimulationProgressText))]
+    [NotifyPropertyChangedFor(nameof(ScaleStatusPillText))]
+    private double _offset = 0.0;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SummaryText))]
+    [NotifyPropertyChangedFor(nameof(NarrativeText))]
+    [NotifyPropertyChangedFor(nameof(LiveFormattedValue))]
+    [NotifyPropertyChangedFor(nameof(SimulationProgressText))]
+    [NotifyPropertyChangedFor(nameof(ScaleStatusPillText))]
+    private string _unit = "bar";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(LiveFormattedValue))]
+    [NotifyPropertyChangedFor(nameof(SimulationProgressText))]
+    [NotifyPropertyChangedFor(nameof(ScaleStatusPillText))]
+    private int _decimalPlaces = 1;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SummaryText))]
+    [NotifyPropertyChangedFor(nameof(NarrativeText))]
+    private bool _isClamped = true;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SummaryText))]
+    [NotifyPropertyChangedFor(nameof(NarrativeText))]
+    private double _clampMin = 0.0;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SummaryText))]
+    [NotifyPropertyChangedFor(nameof(NarrativeText))]
+    private double _clampMax = 100.0;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SummaryText))]
+    [NotifyPropertyChangedFor(nameof(NarrativeText))]
+    [NotifyPropertyChangedFor(nameof(FormulaExpression))]
+    [NotifyPropertyChangedFor(nameof(SimulationProgressText))]
+    [NotifyPropertyChangedFor(nameof(BoundTagIndex))]
+    [NotifyPropertyChangedFor(nameof(InputBadgeText))]
+    [NotifyPropertyChangedFor(nameof(InputConnectionSummary))]
+    [NotifyPropertyChangedFor(nameof(InputConnectionBadge))]
+    [NotifyPropertyChangedFor(nameof(HasWireInputConnection))]
+    private TagModel? _inputTag;
+
+    partial void OnInputTagChanged(TagModel? oldValue, TagModel? newValue)
+    {
+        if (oldValue != null)
+        {
+            oldValue.PropertyChanged -= OnInputTagPropertyChanged;
+        }
+        if (newValue != null)
+        {
+            newValue.PropertyChanged += OnInputTagPropertyChanged;
+        }
+        OnPropertyChanged(nameof(FormulaExpression));
+        OnPropertyChanged(nameof(SummaryText));
+        OnPropertyChanged(nameof(InputConnectionBadge));
+        OnPropertyChanged(nameof(HasWireInputConnection));
+    }
+
+    private void OnInputTagPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(TagModel.Name) || e.PropertyName == nameof(TagModel.DisplayName) || e.PropertyName == nameof(TagModel.Alias))
+        {
+            OnPropertyChanged(nameof(FormulaExpression));
+            OnPropertyChanged(nameof(SummaryText));
+            OnPropertyChanged(nameof(InputConnectionBadge));
+        }
+    }
+
+    public string InputConnectionBadge => InputTag != null
+        ? $"🔗 Connected: {InputTag.Name}"
+        : string.Empty;
+
+    public bool HasWireInputConnection => InputTag != null;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SummaryText))]
+    [NotifyPropertyChangedFor(nameof(NarrativeText))]
+    [NotifyPropertyChangedFor(nameof(OutputBadgeText))]
+    [NotifyPropertyChangedFor(nameof(OutputConnectionSummary))]
+    [NotifyPropertyChangedFor(nameof(OutputConnectionBadge))]
+    [NotifyPropertyChangedFor(nameof(HasWireOutputConnection))]
+    private TagModel? _outputTag;
+
+    partial void OnOutputTagChanged(TagModel? oldValue, TagModel? newValue)
+    {
+        if (oldValue != null)
+        {
+            oldValue.PropertyChanged -= OnOutputTagPropertyChanged;
+        }
+        if (newValue != null)
+        {
+            newValue.PropertyChanged += OnOutputTagPropertyChanged;
+        }
+        OnPropertyChanged(nameof(SummaryText));
+        OnPropertyChanged(nameof(OutputConnectionBadge));
+        OnPropertyChanged(nameof(HasWireOutputConnection));
+    }
+
+    private void OnOutputTagPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(TagModel.Name) || e.PropertyName == nameof(TagModel.DisplayName) || e.PropertyName == nameof(TagModel.Alias))
+        {
+            OnPropertyChanged(nameof(SummaryText));
+            OnPropertyChanged(nameof(OutputConnectionBadge));
+        }
+    }
+
+    public string OutputConnectionBadge => OutputTag != null
+        ? $"🔗 Connected: {OutputTag.Name}"
+        : string.Empty;
+
+    public bool HasWireOutputConnection => OutputTag != null;
+
+    public override void Dispose()
+    {
+        if (InputTag != null)
+        {
+            InputTag.PropertyChanged -= OnInputTagPropertyChanged;
+        }
+        if (OutputTag != null)
+        {
+            OutputTag.PropertyChanged -= OnOutputTagPropertyChanged;
+        }
+        base.Dispose();
+    }
+
+    // Two-Point Calibration Helper Properties
+    [ObservableProperty]
+    private double _calibX1 = 0.0;
+
+    [ObservableProperty]
+    private double _calibY1 = 0.0;
+
+    [ObservableProperty]
+    private double _calibX2 = 10000.0;
+
+    [ObservableProperty]
+    private double _calibY2 = 100.0;
+
+    [ObservableProperty]
+    private string _gainText = "0.01";
+
+    [ObservableProperty]
+    private string _offsetText = "0";
+
+    [ObservableProperty]
+    private string _clampMinText = "0";
+
+    [ObservableProperty]
+    private string _clampMaxText = "100";
+
+    [ObservableProperty]
+    private string _calibX1Text = "0";
+
+    [ObservableProperty]
+    private string _calibY1Text = "0";
+
+    [ObservableProperty]
+    private string _calibX2Text = "10000";
+
+    [ObservableProperty]
+    private string _calibY2Text = "100";
+
+    partial void OnGainTextChanged(string value)
+    {
+        if (NumericInputHelper.TryParseFlexibleDouble(value, out double parsed))
+        {
+            if (Math.Abs(Gain - parsed) > 1e-9) Gain = parsed;
+        }
+    }
+
+    partial void OnGainChanged(double value)
+    {
+        if (!NumericInputHelper.TryParseFlexibleDouble(GainText, out double cur) || Math.Abs(cur - value) > 1e-9)
+        {
+            GainText = NumericInputHelper.FormatDouble(value);
+        }
+    }
+
+    partial void OnOffsetTextChanged(string value)
+    {
+        if (NumericInputHelper.TryParseFlexibleDouble(value, out double parsed))
+        {
+            if (Math.Abs(Offset - parsed) > 1e-9) Offset = parsed;
+        }
+    }
+
+    partial void OnOffsetChanged(double value)
+    {
+        if (!NumericInputHelper.TryParseFlexibleDouble(OffsetText, out double cur) || Math.Abs(cur - value) > 1e-9)
+        {
+            OffsetText = NumericInputHelper.FormatDouble(value);
+        }
+    }
+
+    partial void OnClampMinTextChanged(string value)
+    {
+        if (NumericInputHelper.TryParseFlexibleDouble(value, out double parsed))
+        {
+            if (Math.Abs(ClampMin - parsed) > 1e-9) ClampMin = parsed;
+        }
+    }
+
+    partial void OnClampMinChanged(double value)
+    {
+        if (!NumericInputHelper.TryParseFlexibleDouble(ClampMinText, out double cur) || Math.Abs(cur - value) > 1e-9)
+        {
+            ClampMinText = NumericInputHelper.FormatDouble(value);
+        }
+    }
+
+    partial void OnClampMaxTextChanged(string value)
+    {
+        if (NumericInputHelper.TryParseFlexibleDouble(value, out double parsed))
+        {
+            if (Math.Abs(ClampMax - parsed) > 1e-9) ClampMax = parsed;
+        }
+    }
+
+    partial void OnClampMaxChanged(double value)
+    {
+        if (!NumericInputHelper.TryParseFlexibleDouble(ClampMaxText, out double cur) || Math.Abs(cur - value) > 1e-9)
+        {
+            ClampMaxText = NumericInputHelper.FormatDouble(value);
+        }
+    }
+
+    partial void OnCalibX1TextChanged(string value)
+    {
+        if (NumericInputHelper.TryParseFlexibleDouble(value, out double parsed))
+        {
+            if (Math.Abs(CalibX1 - parsed) > 1e-9) CalibX1 = parsed;
+        }
+    }
+
+    partial void OnCalibX1Changed(double value)
+    {
+        if (!NumericInputHelper.TryParseFlexibleDouble(CalibX1Text, out double cur) || Math.Abs(cur - value) > 1e-9)
+        {
+            CalibX1Text = NumericInputHelper.FormatDouble(value);
+        }
+    }
+
+    partial void OnCalibY1TextChanged(string value)
+    {
+        if (NumericInputHelper.TryParseFlexibleDouble(value, out double parsed))
+        {
+            if (Math.Abs(CalibY1 - parsed) > 1e-9) CalibY1 = parsed;
+        }
+    }
+
+    partial void OnCalibY1Changed(double value)
+    {
+        if (!NumericInputHelper.TryParseFlexibleDouble(CalibY1Text, out double cur) || Math.Abs(cur - value) > 1e-9)
+        {
+            CalibY1Text = NumericInputHelper.FormatDouble(value);
+        }
+    }
+
+    partial void OnCalibX2TextChanged(string value)
+    {
+        if (NumericInputHelper.TryParseFlexibleDouble(value, out double parsed))
+        {
+            if (Math.Abs(CalibX2 - parsed) > 1e-9) CalibX2 = parsed;
+        }
+    }
+
+    partial void OnCalibX2Changed(double value)
+    {
+        if (!NumericInputHelper.TryParseFlexibleDouble(CalibX2Text, out double cur) || Math.Abs(cur - value) > 1e-9)
+        {
+            CalibX2Text = NumericInputHelper.FormatDouble(value);
+        }
+    }
+
+    partial void OnCalibY2TextChanged(string value)
+    {
+        if (NumericInputHelper.TryParseFlexibleDouble(value, out double parsed))
+        {
+            if (Math.Abs(CalibY2 - parsed) > 1e-9) CalibY2 = parsed;
+        }
+    }
+
+    partial void OnCalibY2Changed(double value)
+    {
+        if (!NumericInputHelper.TryParseFlexibleDouble(CalibY2Text, out double cur) || Math.Abs(cur - value) > 1e-9)
+        {
+            CalibY2Text = NumericInputHelper.FormatDouble(value);
+        }
+    }
+
+    // Live Monitoring & Simulation
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SimulationProgressText))]
+    private int _liveRawInput;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(LiveFormattedValue))]
+    [NotifyPropertyChangedFor(nameof(SimulationProgressText))]
+    [NotifyPropertyChangedFor(nameof(ScaleStatusPillText))]
+    private double _liveScaledValue;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ScaleStatusPillText))]
+    private double _liveProgressPercent;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(LiveVisualState))]
+    private TagQuality _liveQuality = TagQuality.Unknown;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(LiveVisualState))]
+    private bool _isLiveOnline;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(LiveVisualState))]
+    [NotifyPropertyChangedFor(nameof(SimulationProgressText))]
+    private bool _isLiveActive;
+
+    [ObservableProperty]
+    private string _liveValueText = "--";
+
+    [ObservableProperty]
+    private bool _hasReceivedUpdate;
+
+    public int LiveRawValue => LiveRawInput;
+
+    public NodeLiveVisualState LiveVisualState
+    {
+        get
+        {
+            if (!IsLiveOnline) return NodeLiveVisualState.Offline;
+            if (LiveQuality == TagQuality.Stale) return NodeLiveVisualState.Stale;
+            if (IsLiveActive) return NodeLiveVisualState.Active;
+            return NodeLiveVisualState.Inactive;
+        }
+    }
+
+    public string FormulaExpression
+    {
+        get
+        {
+            string varName = (InputTag != null && !string.IsNullOrWhiteSpace(InputTag.Name))
+                ? InputTag.Name
+                : "x";
+            return Offset < 0 
+                ? $"y = {Gain:0.#####}·{varName} - {Math.Abs(Offset):0.#####}" 
+                : $"y = {Gain:0.#####}·{varName} + {Offset:0.#####}";
+        }
+    }
+
+    public string LiveFormattedValue => $"{LiveScaledValue.ToString($"F{Math.Clamp(DecimalPlaces, 0, 4)}")} {Unit}";
+
+    public string SimulationProgressText
+    {
+        get
+        {
+            if (!IsLiveActive && !IsSimActive && LiveRawInput == 0)
+            {
+                return FormulaExpression;
+            }
+
+            string unitStr = (InputTag == null || InputTag.Kind == TagKind.AnalogInput) ? "mV" : "";
+            return string.IsNullOrEmpty(unitStr)
+                ? $"IN: {LiveRawInput:N0}"
+                : $"IN: {LiveRawInput:N0} {unitStr}";
+        }
+    }
+
+
+    public string ScaleStatusPillText => $"{LiveFormattedValue} ({(int)LiveProgressPercent}%)";
+
+    public string InputBadgeText => InputTag != null ? InputTag.Name : "—";
+
+    public string OutputBadgeText => OutputTag != null ? OutputTag.Name : "—";
+
+    public string InputConnectionSummary => InputTag != null
+        ? string.Format(LocalizationService.Tr("InspectorScalePortInConnected"), InputTag.DisplayName)
+        : LocalizationService.Tr("InspectorScalePortInNone");
+
+    public string OutputConnectionSummary => OutputTag != null
+        ? string.Format(LocalizationService.Tr("InspectorScalePortOutConnected"), OutputTag.DisplayName)
+        : LocalizationService.Tr("InspectorScalePortOutNone");
+
+    public string NarrativeText
+    {
+        get
+        {
+            string inStr = InputTag != null ? InputTag.DisplayName : LocalizationService.Tr("InspectorScalePortInNone");
+            string outStr = OutputTag != null ? OutputTag.DisplayName : LocalizationService.Tr("InspectorScalePortOutNone");
+            string clampStr = IsClamped ? $" [Min: {ClampMin}, Max: {ClampMax}]" : "";
+            return string.Format(LocalizationService.Tr("InspectorScaleNarrative"), inStr, FormulaExpression, Unit, clampStr, outStr);
+        }
+    }
+
+    public override string SummaryText => string.IsNullOrWhiteSpace(CustomLabel)
+        ? $"{Title} [{FormulaExpression}] ({Unit})"
+        : $"{CustomLabel} [{FormulaExpression}] ({Unit})";
+
+    public ScaleNodeViewModel(TagModel? inTag = null, TagModel? outTag = null)
+    {
+        Title = "SCALE";
+        Icon = "📐";
+        InputTag = inTag;
+        OutputTag = outTag;
+
+        InputConnectors.Add(new ConnectorViewModel
+        {
+            Title = "IN",
+            TooltipKey = "PinTooltipScaleIn",
+            IsInput = true,
+            Node = this
+        });
+
+        OutputConnectors.Add(new ConnectorViewModel
+        {
+            Title = "OUT",
+            TooltipKey = "PinTooltipScaleOut",
+            IsInput = false,
+            Node = this
+        });
+
+        // Initialize Calibration helper with default 0..10V to 0..100
+        CalibX1 = 0;
+        CalibY1 = 0;
+        CalibX2 = 10000;
+        CalibY2 = 100;
+
+        GainText = NumericInputHelper.FormatDouble(Gain);
+        OffsetText = NumericInputHelper.FormatDouble(Offset);
+        ClampMinText = NumericInputHelper.FormatDouble(ClampMin);
+        ClampMaxText = NumericInputHelper.FormatDouble(ClampMax);
+        CalibX1Text = NumericInputHelper.FormatDouble(CalibX1);
+        CalibY1Text = NumericInputHelper.FormatDouble(CalibY1);
+        CalibX2Text = NumericInputHelper.FormatDouble(CalibX2);
+        CalibY2Text = NumericInputHelper.FormatDouble(CalibY2);
+    }
+
+    /// <summary>
+    /// Tính toán giá trị scaled và progress % dựa trên raw input.
+    /// </summary>
+    public double Calculate(double rawInput)
+    {
+        LiveRawInput = (int)rawInput;
+
+        double calc = Gain * rawInput + Offset;
+        if (IsClamped)
+        {
+            double min = Math.Min(ClampMin, ClampMax);
+            double max = Math.Max(ClampMin, ClampMax);
+            calc = Math.Clamp(calc, min, max);
+        }
+
+        LiveScaledValue = calc;
+
+        // Tính progress bar (0..100%)
+        double span = Math.Abs(ClampMax - ClampMin);
+        if (span > 1e-6)
+        {
+            double progress = (calc - Math.Min(ClampMin, ClampMax)) / span * 100.0;
+            LiveProgressPercent = Math.Clamp(progress, 0.0, 100.0);
+        }
+        else
+        {
+            LiveProgressPercent = 0.0;
+        }
+
+        IsLiveActive = Math.Abs(calc) > 1e-6;
+        LiveValueText = LiveFormattedValue;
+
+        return calc;
+    }
+
+    /// <summary>
+    /// Công cụ tính nhanh Gain & Offset từ 2 điểm hiệu chuẩn thực tế (X1, Y1) và (X2, Y2).
+    /// </summary>
+    [RelayCommand]
+    public void CalculateFromCalibPoints()
+    {
+        double dx = CalibX2 - CalibX1;
+        if (Math.Abs(dx) < 1e-6)
+        {
+            return; // Tránh chia cho 0
+        }
+
+        double newGain = (CalibY2 - CalibY1) / dx;
+        double newOffset = CalibY1 - newGain * CalibX1;
+
+        Gain = Math.Round(newGain, 6);
+        Offset = Math.Round(newOffset, 6);
+
+        ClampMin = Math.Min(CalibY1, CalibY2);
+        ClampMax = Math.Max(CalibY1, CalibY2);
+        IsClamped = true;
+
+        // Recalculate with current input
+        Calculate(LiveRawInput);
+    }
+
+    public void ApplyRuntimeSnapshot(RuntimeTagSnapshot snapshot, bool isOnline)
+    {
+        IsLiveOnline = isOnline;
+        LiveQuality = snapshot.Quality;
+        HasReceivedUpdate = true;
+        Calculate(snapshot.RawValue);
+    }
+
+    public void SetOffline()
+    {
+        IsLiveOnline = false;
+        LiveQuality = TagQuality.Unknown;
+        IsLiveActive = false;
+    }
+}

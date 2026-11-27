@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <AssemblyName>SynaptixIDE</AssemblyName>
+    <AssemblyTitle>SynaptiX IDE</AssemblyTitle>
+    <Product>SynaptiX IDE</Product>
+    <Company>SynaptiX Corporation</Company>
+    <Description>SynaptiX Industrial Automation Platform</Description>
+    <Version>2.15.11</Version>
+    <AssemblyVersion>2.15.11.0</AssemblyVersion>
+    <FileVersion>2.15.11.0</FileVersion>
+  </PropertyGroup>
+
+
+  <ItemGroup>
+    <Resource Include="Assets\app.ico" />
+    <Resource Include="Assets\app.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
+    <PackageReference Include="Nodify" Version="6.2.0" />
+    <PackageReference Include="System.IO.Ports" Version="8.0.0" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\src\SimplePLC.Domain\SimplePLC.Domain.csproj" />
+    <ProjectReference Include="..\src\SimplePLC.Protocol\SimplePLC.Protocol.csproj" />
+    <ProjectReference Include="..\src\SimplePLC.Infrastructure\SimplePLC.Infrastructure.csproj" />
+    <ProjectReference Include="..\src\SimplePLC.Application\SimplePLC.Application.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="SimplePLC.Domain.Enums" />
+  </ItemGroup>
+
+  <Target Name="CleanupWpfTmpFiles" BeforeTargets="BeforeBuild;Clean" AfterTargets="Build">
+    <ItemGroup>
+      <_WpfTmpFiles Include="$(MSBuildProjectDirectory)\*_wpftmp.csproj" />
+    </ItemGroup>
+    <Delete Files="@(_WpfTmpFiles)" ContinueOnError="true" />
+  </Target>
+
+</Project>

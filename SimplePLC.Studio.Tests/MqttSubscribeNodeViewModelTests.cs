@@ -1,0 +1,520 @@
+using SimplePLC.Protocol.Enums;
+using SimplePLC.Studio.ViewModels;
+using Xunit;
+
+namespace SimplePLC.Studio.Tests;
+
+/// <summary>
+/// Unit tests cho <see cref="MqttSubscribeNodeViewModel"/> kiểm thử luồng nhận lệnh MQTT Subscribe,
+/// quản lý chân kết nối, đồng bộ loại dữ liệu và xử lý hàng đợi.
+/// </summary>
+public class MqttSubscribeNodeViewModelTests
+{
+    [Fact]
+    public void Constructor_InitializesDefaultConnectors()
+    {
+        var node = new MqttSubscribeNodeViewModel("spx/rack_01/cmd");
+
+        Assert.Equal("MQTT SUB", node.Title);
+        Assert.Equal("spx/rack_01/cmd", node.Topic);
+        Assert.Empty(node.InputConnectors);
+
+        Assert.Equal(2, node.OutputConnectors.Count);
+        Assert.Equal("Valid", node.OutputConnectors[0].Title);
+        Assert.Equal("Err", node.OutputConnectors[1].Title);
+    }
+
+    [Fact]
+    public void AddPin_SynchronizesDynamicOutputConnector()
+    {
+        var node = new MqttSubscribeNodeViewModel();
+
+        node.AddPin(new MqttPinBindingViewModel
+        {
+            Label = "grid",
+            JsonPath = "grid",
+            DataType = MqttDataType.Int16
+        });
+
+        Assert.Single(node.Pins);
+        // 2 chân cố định (Valid, Err) + 1 chân động (grid) = 3 chân
+        Assert.Equal(3, node.OutputConnectors.Count);
+        Assert.Equal("grid", node.OutputConnectors[2].Title);
+    }
+
+    [Fact]
+    public void RenamePin_UpdatesConnectorTitle()
+    {
+        var node = new MqttSubscribeNodeViewModel();
+        var pin = new MqttPinBindingViewModel
+        {
+            Label = "old_name",
+            JsonPath = "data"
+        };
+        node.AddPin(pin);
+
+        Assert.Equal("old_name", node.OutputConnectors[2].Title);
+
+        // Đổi tên nhãn của pin
+        pin.Label = "target_grid";
+
+        Assert.Equal("target_grid", node.OutputConnectors[2].Title);
+    }
+
+    [Fact]
+    public void RemovePin_RemovesConnectorFromCanvas()
+    {
+        var node = new MqttSubscribeNodeViewModel();
+        var pin = new MqttPinBindingViewModel { Label = "temp_pin" };
+        node.AddPin(pin);
+
+        Assert.Equal(3, node.OutputConnectors.Count);
+
+        node.RemovePin(pin);
+
+        Assert.Empty(node.Pins);
+        Assert.Equal(2, node.OutputConnectors.Count);
+    }
+
+    [Fact]
+    public void ProcessInboundPayload_ValidSortToLightMessage_UpdatesPinsAndCounters()
+    {
+        var node = new MqttSubscribeNodeViewModel("spx/sort");
+        var pinGrid = new MqttPinBindingViewModel { Label = "grid", JsonPath = "grid", DataType = MqttDataType.Int16 };
+        var pinColor = new MqttPinBindingViewModel { Label = "color", JsonPath = "color", DataType = MqttDataType.Int16 };
+        node.AddPin(pinGrid);
+        node.AddPin(pinColor);
+
+        var result = node.ProcessInboundPayload("{\"grid\": 7, \"color\": 3}");
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1u, node.MsgCount);
+        Assert.Equal(0u, node.DroppedCount);
+        Assert.True(node.IsValidActive);
+        Assert.False(node.IsErrorActive);
+
+        Assert.Equal(7, pinGrid.CurrentValue);
+        Assert.Equal(3, pinColor.CurrentValue);
+    }
+
+    [Fact]
+    public void ProcessInboundPayload_InvalidMessage_IncrementsDroppedCountAndSetsErrorCode()
+    {
+        var node = new MqttSubscribeNodeViewModel("spx/sort");
+        var pinGrid = new MqttPinBindingViewModel { Label = "grid", JsonPath = "grid", DataType = MqttDataType.Int16, MinValue = 1, MaxValue = 18 };
+        node.AddPin(pinGrid);
+
+        // Ô 99 vượt quá MaxValue 18
+        var result = node.ProcessInboundPayload("{\"grid\": 99}");
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(MqttErrorCode.OutOfRange, node.LastErrorCode);
+        Assert.Equal(0u, node.MsgCount);
+        Assert.Equal(1u, node.DroppedCount);
+        Assert.False(node.IsValidActive);
+        Assert.True(node.IsErrorActive);
+    }
+
+    [Fact]
+    public void LogicEditor_CreateNodeInstance_MqttSubscribe_ReturnsValidNode()
+    {
+        var editor = new LogicEditorViewModel(new TagCatalogViewModel());
+        var node = editor.CreateNodeInstance("MqttSubscribe");
+
+        Assert.NotNull(node);
+        Assert.IsType<MqttSubscribeNodeViewModel>(node);
+        Assert.Equal("MQTT SUB", node.Title);
+    }
+
+    [Fact]
+    public void LogicEditor_RoundtripPersistence_MqttSubscribe_PreservesAllConfigAndPins()
+    {
+        var catalog = new TagCatalogViewModel();
+        var editor = new LogicEditorViewModel(catalog);
+
+        var original = new MqttSubscribeNodeViewModel("factory/sort/line_1")
+        {
+            Qos = 2,
+            QueueMode = MqttQueueMode.LatestWins,
+            IgnoreRetained = false,
+            FailSafeAction = MqttFailSafeAction.ResetToDefault,
+            FailSafeTimeoutMs = 5000
+        };
+
+        original.Pins.Add(new MqttPinBindingViewModel("box_id", "data.box_id", MqttDataType.Int32, null, 1, 999999, 0));
+        original.Pins.Add(new MqttPinBindingViewModel("color", "data.color", MqttDataType.Int16, null, 1, 8, 1));
+
+        // Export/Save to ProjectNodeData
+        var pData = LogicEditorViewModel.ExportSingleNodeData(original);
+
+        Assert.Equal("MqttSubscribe", pData.Type);
+        Assert.Equal("factory/sort/line_1", pData.MqttTopic);
+        Assert.Equal(2, pData.MqttQos);
+        Assert.Equal("LatestWins", pData.MqttSubQueueMode);
+        Assert.False(pData.MqttSubIgnoreRetained);
+        Assert.Equal(5000u, pData.MqttSubTimeoutMs);
+        Assert.Equal("ResetToDefault", pData.MqttSubFailSafeAction);
+        Assert.Equal(2, pData.MqttSubPins.Count);
+
+        // Import/Load back
+        var restored = editor.CreateNodeFromData(pData) as MqttSubscribeNodeViewModel;
+
+        Assert.NotNull(restored);
+        Assert.Equal("factory/sort/line_1", restored.Topic);
+        Assert.Equal(2, restored.Qos);
+        Assert.Equal(MqttQueueMode.LatestWins, restored.QueueMode);
+        Assert.False(restored.IgnoreRetained);
+        Assert.Equal(5000u, restored.FailSafeTimeoutMs);
+        Assert.Equal(MqttFailSafeAction.ResetToDefault, restored.FailSafeAction);
+        Assert.Equal(2, restored.Pins.Count);
+
+        Assert.Equal("box_id", restored.Pins[0].Label);
+        Assert.Equal("data.box_id", restored.Pins[0].JsonPath);
+        Assert.Equal(MqttDataType.Int32, restored.Pins[0].DataType);
+        Assert.Equal(1.0, restored.Pins[0].MinValue);
+        Assert.Equal(999999.0, restored.Pins[0].MaxValue);
+
+        Assert.Equal("color", restored.Pins[1].Label);
+        Assert.Equal("data.color", restored.Pins[1].JsonPath);
+        Assert.Equal(MqttDataType.Int16, restored.Pins[1].DataType);
+
+        // Connectors on Canvas must match: 2 fixed + 2 dynamic = 4
+        Assert.Equal(4, restored.OutputConnectors.Count);
+        Assert.Equal("Valid", restored.OutputConnectors[0].Title);
+        Assert.Equal("Err", restored.OutputConnectors[1].Title);
+        Assert.Equal("box_id", restored.OutputConnectors[2].Title);
+        Assert.Equal("color", restored.OutputConnectors[3].Title);
+    }
+
+    [Fact]
+    public void Dialog_RunSimulation_UpdatesCurrentStringValue()
+    {
+        var node = new MqttSubscribeNodeViewModel();
+        var pinGrid = new MqttPinBindingViewModel("grid", "grid", MqttDataType.Int16);
+        var pinColor = new MqttPinBindingViewModel("color", "color", MqttDataType.Int16);
+        node.Pins.Add(pinGrid);
+        node.Pins.Add(pinColor);
+
+        var dialogVm = new MqttSubConfigDialogViewModel(node, new TagCatalogViewModel());
+        dialogVm.RunSimulation();
+
+        Assert.Equal("5", pinGrid.CurrentStringValue);
+        Assert.Equal("1", pinColor.CurrentStringValue);
+    }
+
+    [Fact]
+    public void Dialog_AddPinAndRemovePin_PreservesUserCustomPayload()
+    {
+        var node = new MqttSubscribeNodeViewModel();
+        var pinGrid = new MqttPinBindingViewModel("grid", "grid", MqttDataType.Int16);
+        node.Pins.Add(pinGrid);
+
+        var dialogVm = new MqttSubConfigDialogViewModel(node, new TagCatalogViewModel());
+
+        // Người dùng dán chuỗi payload custom của họ
+        string customUserPayload = "{ 'custom_command': { 'grid': 12, 'color': 3 } }";
+        dialogVm.SimulationInput = customUserPayload;
+        dialogVm.RunSimulation();
+
+        // Kiểm tra đã bóc tách được trường đầu tiên
+        Assert.Equal("12", pinGrid.CurrentStringValue);
+
+        // Khi người dùng bấm thêm chân "color", chuỗi payload custom KHÔNG được phép bị ghi đè!
+        dialogVm.AddPin();
+        Assert.Equal(customUserPayload, dialogVm.SimulationInput);
+
+        // Sau khi đổi tên chân mới thành "color", chạy lại bóc tách phải ra giá trị 3
+        var addedPin = node.Pins[^1];
+        addedPin.FieldName = "color";
+        dialogVm.RunSimulation();
+
+        Assert.Equal(customUserPayload, dialogVm.SimulationInput);
+        Assert.Equal("3", addedPin.CurrentStringValue);
+
+        // Khi xóa bớt 1 chân, chuỗi custom payload vẫn phải được bảo toàn nguyên vẹn
+        dialogVm.RemovePin(addedPin);
+        Assert.Equal(customUserPayload, dialogVm.SimulationInput);
+
+        // Chỉ khi người dùng chủ động bấm "ResetSamplePayload" thì chuỗi mẫu mặc định mới được tạo lại
+        dialogVm.ResetSamplePayload();
+        Assert.NotEqual(customUserPayload, dialogVm.SimulationInput);
+        Assert.Contains("SynaptiX_Controller", dialogVm.SimulationInput);
+    }
+
+    [Fact]
+    public void QueueModeSummaryText_ReflectsModeAndCapacity()
+    {
+        var node = new MqttSubscribeNodeViewModel();
+        Assert.Equal(MqttQueueMode.Fifo, node.QueueMode);
+        Assert.Equal(16, node.QueueCapacity);
+        Assert.Equal("FIFO (16)", node.QueueModeSummaryText);
+
+        node.QueueCapacity = 8;
+        Assert.Equal("FIFO (8)", node.QueueModeSummaryText);
+
+        node.QueueMode = MqttQueueMode.LatestWins;
+        Assert.Equal("Latest Wins", node.QueueModeSummaryText);
+
+        node.QueueMode = MqttQueueMode.Fifo;
+        Assert.Equal("FIFO (8)", node.QueueModeSummaryText);
+
+
+
+
+    }
+
+    [Fact]
+    public void MqttPin_DataTypeChange_ToBool_ResetsIncompatibleTargetTag_ToNone()
+    {
+        var tagCatalog = new TagCatalogViewModel();
+        var node = new MqttSubscribeNodeViewModel();
+        var dialog = new MqttSubConfigDialogViewModel(node, tagCatalog);
+
+        var pin = new MqttPinBindingViewModel("TargetSpeed", "speed", MqttDataType.Int16);
+        dialog.ConfigurePinTagProvider(pin);
+        node.Pins.Add(pin);
+
+        var vreg = tagCatalog.AllTags.First(t => t.Kind == SimplePLC.Domain.Enums.TagKind.VirtualRegister);
+        pin.TargetTag = vreg;
+        Assert.Equal(vreg, pin.TargetTag);
+
+        // Switch DataType to Bool -> VREG is no longer in AvailableTags -> Must reset to None
+        pin.DataType = MqttDataType.Bool;
+        Assert.NotNull(pin.TargetTag);
+        Assert.Equal(SimplePLC.Domain.Enums.TagKind.None, pin.TargetTag.Kind);
+    }
+
+    [Fact]
+    public void MqttPin_TargetTagSelection_AutoSyncsDataType()
+    {
+        var tagCatalog = new TagCatalogViewModel();
+        var vr0 = tagCatalog.AllTags.First(t => t.Name == "VREG0");
+        vr0.DataType = SimplePLC.Domain.Enums.TagDataType.Float32;
+
+        var do0 = tagCatalog.AllTags.First(t => t.Name == "DO0");
+
+        var pin = new MqttPinBindingViewModel("TestPin", "test", MqttDataType.Int16);
+        pin.TagProvider = dt => tagCatalog.GetFilteredTags(TagAccessRole.WriteTarget, dt, includeNone: true);
+
+        // 1. Select DO0 (Digital) -> Auto-syncs to Bool
+        pin.TargetTag = do0;
+        Assert.Equal(MqttDataType.Bool, pin.DataType);
+
+        // 2. Select VREG0 (Float32) -> Auto-syncs to Float
+        pin.TargetTag = vr0;
+        Assert.Equal(MqttDataType.Float, pin.DataType);
+    }
+
+    [Fact]
+    public void MqttSubConfigDialogViewModel_ConfiguresPinTagProvider_WithWriteTargetOnly()
+    {
+        var tagCatalog = new TagCatalogViewModel();
+        var node = new MqttSubscribeNodeViewModel();
+        var dialog = new MqttSubConfigDialogViewModel(node, tagCatalog);
+
+        dialog.AddPin();
+        var pin = node.Pins[0];
+        Assert.NotNull(pin.TagProvider);
+
+        pin.DataType = MqttDataType.Bool;
+        var available = pin.AvailableTags.ToList();
+
+        Assert.NotEmpty(available);
+        Assert.All(available, t =>
+        {
+            Assert.False(t.Kind == SimplePLC.Domain.Enums.TagKind.DiscreteInput, "DiscreteInput must NOT be in AvailableTags");
+            Assert.False(t.Kind == SimplePLC.Domain.Enums.TagKind.AnalogInput, "AnalogInput must NOT be in AvailableTags");
+            Assert.False(t.Kind == SimplePLC.Domain.Enums.TagKind.System, "System tag must NOT be in AvailableTags");
+        });
+    }
+
+    [Fact]
+    public void MqttSubConfig_WhenPinAdded_AutomaticallyUpdatesSamplePayloadAndExtractedPins()
+    {
+        var tagCatalog = new TagCatalogViewModel();
+        var node = new MqttSubscribeNodeViewModel();
+        var dialog = new MqttSubConfigDialogViewModel(node, tagCatalog);
+
+        // Ban đầu chưa có pin
+        Assert.Empty(node.Pins);
+
+        // Thêm pin 1 (mặc định là 'grid')
+        dialog.AddPinCommand.Execute(null);
+
+        Assert.Single(node.Pins);
+        Assert.Equal("grid", node.Pins[0].FieldName);
+
+        // Xác nhận SimulationInput tự động chứa "grid" mà không cần bấm Reset Sample
+        Assert.Contains("\"grid\": 5", dialog.SimulationInput);
+        Assert.True(dialog.IsSimulationSuccess);
+
+        // Thêm pin 2 (mặc định là 'color')
+        dialog.AddPinCommand.Execute(null);
+
+        Assert.Equal(2, node.Pins.Count);
+        Assert.Contains("\"grid\": 5", dialog.SimulationInput);
+        Assert.Contains("\"color\": 1", dialog.SimulationInput);
+        Assert.True(dialog.IsSimulationSuccess);
+    }
+
+    [Fact]
+    public void MqttSubConfig_WhenFieldNameOrDataTypeChanged_AutomaticallyUpdatesSamplePayload()
+    {
+        var tagCatalog = new TagCatalogViewModel();
+        var node = new MqttSubscribeNodeViewModel();
+        var dialog = new MqttSubConfigDialogViewModel(node, tagCatalog);
+
+        dialog.AddPinCommand.Execute(null); // 'grid' (INT16)
+        Assert.Contains("\"grid\": 5", dialog.SimulationInput);
+
+        // Đổi tên trường sang 'temperature'
+        node.Pins[0].FieldName = "temperature";
+        Assert.Contains("\"temperature\": 10", dialog.SimulationInput);
+        Assert.DoesNotContain("\"grid\"", dialog.SimulationInput);
+
+        // Đổi kiểu dữ liệu sang Float
+        node.Pins[0].DataType = MqttDataType.Float;
+        Assert.Contains("\"temperature\": 25.5", dialog.SimulationInput);
+        Assert.True(dialog.IsSimulationSuccess, dialog.SimulationStatusMessage);
+    }
+
+    [Fact]
+    public void MqttSubConfig_WhenUserPastesCustomJson_PreservesCustomPayloadOnPinChanges()
+    {
+        var tagCatalog = new TagCatalogViewModel();
+        var node = new MqttSubscribeNodeViewModel();
+        var dialog = new MqttSubConfigDialogViewModel(node, tagCatalog);
+
+        dialog.AddPinCommand.Execute(null);
+
+        // Người dùng tự dán JSON tùy biến
+        string customJson = "{\n  \"device\": \"CustomGateway\",\n  \"values\": {\n    \"grid\": 99\n  }\n}";
+        dialog.SimulationInput = customJson;
+        Assert.True(dialog.IsUserModified);
+
+        // Thêm một pin mới
+        dialog.AddPinCommand.Execute(null);
+
+        // Xác nhận chuỗi tùy biến của người dùng KHÔNG bị ghi đè mất
+        Assert.Equal(customJson, dialog.SimulationInput);
+    }
+
+    [Fact]
+    public void MqttSubConfig_WhenResetSampleExecuted_RevertsToAutoSync()
+    {
+        var tagCatalog = new TagCatalogViewModel();
+        var node = new MqttSubscribeNodeViewModel();
+        var dialog = new MqttSubConfigDialogViewModel(node, tagCatalog);
+
+        dialog.AddPinCommand.Execute(null); // grid
+        dialog.AddPinCommand.Execute(null); // color
+
+        // Người dùng dán JSON tùy biến
+        dialog.SimulationInput = "{\"custom\": true}";
+        Assert.True(dialog.IsUserModified);
+
+        // Bấm nút Reset Sample
+        dialog.ResetSamplePayloadCommand.Execute(null);
+
+        // Xác nhận đã hủy cờ tùy biến và nạp lại mẫu đầy đủ các pin
+        Assert.False(dialog.IsUserModified);
+        Assert.Contains("\"grid\": 5", dialog.SimulationInput);
+        Assert.Contains("\"color\": 1", dialog.SimulationInput);
+        Assert.True(dialog.IsSimulationSuccess);
+    }
+
+    [Fact]
+    public void MqttPinBinding_WhenSimulatedWithWrappedJson_PreservesCleanJsonPathInDto()
+    {
+        var node = new MqttSubscribeNodeViewModel("spx/cmd");
+        var pin = new MqttPinBindingViewModel
+        {
+            Label = "grid",
+            JsonPath = "grid",
+            DataType = MqttDataType.Int16
+        };
+        node.AddPin(pin);
+
+        // Simulation with wrapped JSON
+        var result = node.ProcessInboundPayload("{\"device\": \"Controller\", \"values\": {\"grid\": 5}}");
+        Assert.True(result.IsSuccess);
+        Assert.Equal("values.grid", pin.ResolvedPath);
+
+        // Hardware Ground Truth: DTO sent to device must preserve clean JsonPath, not "values.grid"
+        var dto = pin.ToDto();
+        Assert.Equal("grid", dto.JsonPath);
+    }
+
+    [Fact]
+    public void MqttSub_WhenCustomPayloadEntered_PersistsAcrossExportAndImport()
+    {
+        var editor = new LogicEditorViewModel(new TagCatalogViewModel());
+        var node = new MqttSubscribeNodeViewModel("spx/cmd")
+        {
+            SimInputPayload = "{\"custom_key\": 123}"
+        };
+
+        var pData = LogicEditorViewModel.ExportSingleNodeData(node);
+        Assert.Equal("{\"custom_key\": 123}", pData.MqttSubSimPayload);
+
+        var restored = editor.CreateNodeFromData(pData) as MqttSubscribeNodeViewModel;
+        Assert.NotNull(restored);
+        Assert.Equal("{\"custom_key\": 123}", restored.SimInputPayload);
+    }
+
+    [Fact]
+    public void MqttSubConfig_WhenNodeHasExistingPayload_DoesNotOverwriteWithDefaultSample()
+    {
+        var tagCatalog = new TagCatalogViewModel();
+        var node = new MqttSubscribeNodeViewModel();
+        node.AddPin(new MqttPinBindingViewModel { Label = "grid", JsonPath = "grid" });
+        node.SimInputPayload = "{\"grid\": 99}";
+
+        var dialog = new MqttSubConfigDialogViewModel(node, tagCatalog);
+
+        // Must retain user's saved payload, NOT auto-generate wrapper with "values"
+        Assert.Equal("{\"grid\": 99}", dialog.SimulationInput);
+        Assert.True(dialog.IsUserModified);
+        Assert.DoesNotContain("\"values\"", dialog.SimulationInput);
+        Assert.True(dialog.IsSimulationSuccess);
+    }
+
+    [Fact]
+    public void MqttSubConfig_WhenPinCreated_AvailableTagsIncludesDigitalAndRegisterTags_WithoutManuallySettingDataType()
+    {
+        var tagCatalog = new TagCatalogViewModel();
+        var node = new MqttSubscribeNodeViewModel();
+        var dialog = new MqttSubConfigDialogViewModel(node, tagCatalog);
+
+        dialog.AddPin();
+        var pin = node.Pins[0];
+
+        // Dropdown must contain both Digital (VFLAG, DO) and Register (VREG) writable tags
+        var available = pin.AvailableTags.ToList();
+        Assert.Contains(available, t => t.Name == "VFLAG0");
+        Assert.Contains(available, t => t.Name == "DO0");
+        Assert.Contains(available, t => t.Name == "VREG0");
+        // Must exclude read-only physical inputs
+        Assert.DoesNotContain(available, t => t.Name == "DI0");
+        Assert.DoesNotContain(available, t => t.Name == "AI0");
+
+        // Selecting VFLAG0 automatically switches DataType to Bool and DataTypeText to BOOL
+        var vflag0 = available.First(t => t.Name == "VFLAG0");
+        pin.TargetTag = vflag0;
+        Assert.Equal(MqttDataType.Bool, pin.DataType);
+        Assert.Equal("BOOL", pin.DataTypeText);
+
+        // Selecting VREG0 (Int32) switches DataType to Int32 and DataTypeText to INT32
+        var vreg0 = available.First(t => t.Name == "VREG0");
+        pin.TargetTag = vreg0;
+        Assert.Equal(MqttDataType.Int32, pin.DataType);
+        Assert.Equal("INT32", pin.DataTypeText);
+
+        // Selecting NONE resets DataTypeText to dash
+        var none = available.First(t => t.Kind == SimplePLC.Domain.Enums.TagKind.None);
+        pin.TargetTag = none;
+        Assert.Equal("—", pin.DataTypeText);
+    }
+}
+
+
